@@ -1,29 +1,30 @@
 
 
-## Diagnóstico
+## Problema
 
-O projeto foi copiado com sucesso via Git, mas há **2 erros de build** que impedem o preview de funcionar:
+As edge functions existentes (`invite-user`, `manage-user`) exigem que um admin autenticado faça a chamada. Como não existe nenhum usuário no banco ainda, não há como usá-las.
 
-1. **`vitest`** — importado em `src/test/example.test.ts` mas não está no `package.json`
-2. **`@testing-library/jest-dom`** — importado em `src/test/setup.ts` mas não está no `package.json`
+A função `make_first_admin` no banco também exige um usuário já autenticado via Supabase Auth.
 
-Esses pacotes existiam no projeto antigo como devDependencies, mas não vieram no `package.json` atual. O TypeScript inclui a pasta `src/test/` na compilação e falha ao não encontrar os tipos.
+## Plano
 
-A tela está "travada" porque esses erros de build impedem o Vite de compilar o projeto.
+### Passo 1: Criar edge function temporária `seed-admin`
+Uma edge function simples que usa o `SUPABASE_SERVICE_ROLE_KEY` para:
+1. Criar o usuário no Supabase Auth com `createUser()` (email + senha + email confirmado)
+2. Inserir role `super_admin` na tabela `user_roles`
+3. Inserir nome na tabela `user_profiles`
+4. Inserir acesso aos 3 sistemas (`escalas`, `vendas`, `ferias`) com permissão `view_edit` na tabela `system_access`
 
----
+A function será protegida por um token fixo no header para evitar uso indevido.
 
-## Plano de Correção
+### Passo 2: Chamar a function para criar o usuário
+Dados:
+- Nome: Bruno Silva Morais Carneiro da Cunha
+- Email: brunumorais@gmail.com
+- Senha: K410.alicia
+- Role: super_admin
+- Sistemas: escalas, vendas, ferias (todos com view_edit)
 
-### Passo 1: Adicionar dependências de teste faltantes
-Adicionar ao `devDependencies` do `package.json`:
-- `vitest`
-- `@testing-library/jest-dom`
-
-### Passo 2: Verificar funcionamento
-Após corrigir, o build deve passar e o projeto deve carregar normalmente no preview com a tela de login/seleção de sistema.
-
----
-
-**Resumo**: São apenas 2 pacotes faltando no `package.json`. Com essa correção, o build passa e o projeto funciona.
+### Passo 3: Remover a edge function temporária
+Após confirmar que o usuário foi criado, deletar a function `seed-admin` do projeto.
 
