@@ -223,6 +223,14 @@ export function BrokerIndividualReport({ teamFilter = "all" }: BrokerIndividualR
     }
   }, [periodType, selectedYear, selectedMonth, selectedQuarter, selectedSemester]);
 
+  // reportMonths = only the selected period (no previous month for context)
+  const reportMonths = useMemo(() => {
+    if (periodType === "month") {
+      return [months[months.length - 1]];
+    }
+    return months;
+  }, [months, periodType]);
+
   // Get period label for report header
   const periodLabel = useMemo(() => {
     switch (periodType) {
@@ -382,30 +390,35 @@ export function BrokerIndividualReport({ teamFilter = "all" }: BrokerIndividualR
   // Calculate totals
   // Fetch individual sale details for VGV popover
   const { data: saleDetails = [] } = useQuery({
-    queryKey: ["broker-sale-details", selectedBrokerId, months],
+    queryKey: ["broker-sale-details", selectedBrokerId, reportMonths],
     queryFn: async () => {
-      if (!selectedBrokerId || months.length === 0) return [];
+      if (!selectedBrokerId || reportMonths.length === 0) return [];
       const { data } = await supabase
         .from("broker_sales_proportional")
         .select("sale_id, property_name, sale_date, proportional_value, role")
         .eq("broker_id", selectedBrokerId)
-        .in("year_month", months)
+        .in("year_month", reportMonths)
         .order("sale_date", { ascending: true });
       return data || [];
     },
-    enabled: !!selectedBrokerId && months.length > 0,
+    enabled: !!selectedBrokerId && reportMonths.length > 0,
     ...queryConfig,
   });
 
-  const totalVGV = salesData.reduce((acc, s) => acc + s.vgv, 0);
-  const totalSales = salesData.reduce((acc, s) => acc + s.vendas, 0);
-  const totalProposals = proposalsData.reduce((acc, p) => acc + p.total, 0);
-  const totalConverted = proposalsData.reduce((acc, p) => acc + p.convertidas, 0);
-  const totalLeads = leadsData.reduce((acc, l) => acc + l.recebidos, 0);
-  const totalLeadsActive = leadsData.reduce((acc, l) => Math.max(acc, l.ativos), 0);
-  const totalVisits = leadsData.reduce((acc, l) => acc + l.visitas, 0);
-  const avgScore = evaluationsData.filter(e => e.nota > 0).length > 0
-    ? evaluationsData.filter(e => e.nota > 0).reduce((acc, e) => acc + e.nota, 0) / evaluationsData.filter(e => e.nota > 0).length
+  const reportSalesData = salesData.filter(s => reportMonths.includes(s.month));
+  const reportProposalsData = proposalsData.filter(p => reportMonths.includes(p.month));
+  const reportLeadsData = leadsData.filter(l => reportMonths.includes(l.month));
+  const reportEvaluationsData = evaluationsData.filter(e => reportMonths.includes(e.month));
+
+  const totalVGV = reportSalesData.reduce((acc, s) => acc + s.vgv, 0);
+  const totalSales = reportSalesData.reduce((acc, s) => acc + s.vendas, 0);
+  const totalProposals = reportProposalsData.reduce((acc, p) => acc + p.total, 0);
+  const totalConverted = reportProposalsData.reduce((acc, p) => acc + p.convertidas, 0);
+  const totalLeads = reportLeadsData.reduce((acc, l) => acc + l.recebidos, 0);
+  const totalLeadsActive = reportLeadsData.reduce((acc, l) => Math.max(acc, l.ativos), 0);
+  const totalVisits = reportLeadsData.reduce((acc, l) => acc + l.visitas, 0);
+  const avgScore = reportEvaluationsData.filter(e => e.nota > 0).length > 0
+    ? reportEvaluationsData.filter(e => e.nota > 0).reduce((acc, e) => acc + e.nota, 0) / reportEvaluationsData.filter(e => e.nota > 0).length
     : 0;
 
   const formatCurrency = (value: number) => {
@@ -433,6 +446,8 @@ export function BrokerIndividualReport({ teamFilter = "all" }: BrokerIndividualR
 
     setIsExporting(true);
     try {
+      // Wait for React to render PDF-only blocks
+      await new Promise(r => setTimeout(r, 150));
       const canvas = await html2canvas(reportRef.current, {
         scale: 2,
         useCORS: true,
@@ -709,8 +724,8 @@ export function BrokerIndividualReport({ teamFilter = "all" }: BrokerIndividualR
           />
 
           {/* Detalhes das Vendas - apenas no PDF */}
-          {saleDetails.length > 0 && (
-            <Card className="hidden print:block">
+          {isExporting && saleDetails.length > 0 && (
+            <Card>
               <CardHeader>
                 <CardTitle className="text-base">Detalhes das Vendas</CardTitle>
               </CardHeader>
@@ -750,9 +765,9 @@ export function BrokerIndividualReport({ teamFilter = "all" }: BrokerIndividualR
           )}
 
           {/* Detalhes da Avaliação - apenas no PDF */}
-          <div className="hidden print:block">
-            <EvaluationDetailsPDF brokerId={selectedBrokerId} months={months} />
-          </div>
+          {isExporting && (
+            <EvaluationDetailsPDF brokerId={selectedBrokerId} months={reportMonths} />
+          )}
 
           {/* Charts */}
           <div className="grid md:grid-cols-2 gap-6">
