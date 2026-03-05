@@ -1824,6 +1824,7 @@ export type Database = {
           birth_date: string | null
           broker_type: string
           created_at: string | null
+          creci: string | null
           deactivated_month: string | null
           hire_date: string | null
           id: string
@@ -1839,6 +1840,7 @@ export type Database = {
           birth_date?: string | null
           broker_type?: string
           created_at?: string | null
+          creci?: string | null
           deactivated_month?: string | null
           hire_date?: string | null
           id?: string
@@ -1854,6 +1856,7 @@ export type Database = {
           birth_date?: string | null
           broker_type?: string
           created_at?: string | null
+          creci?: string | null
           deactivated_month?: string | null
           hire_date?: string | null
           id?: string

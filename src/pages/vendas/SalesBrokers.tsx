@@ -470,7 +470,7 @@ const SalesBrokers = () => {
 
       {/* Create/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingBroker ? "Editar Corretor" : "Novo Corretor"}</DialogTitle>
             <DialogDescription>
@@ -635,7 +635,7 @@ const SalesBrokers = () => {
             )}
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="sticky bottom-0 bg-background pt-4 border-t">
             <Button variant="outline" onClick={handleCloseDialog} disabled={isSubmitting}>
               Cancelar
             </Button>
