@@ -77,7 +77,13 @@ interface LocationInfo {
 interface BrokerInfo {
   id: string;
   name: string;
-  availableWeekdays?: string[]; // Para identificar corretores Seg-Dom
+  availableWeekdays?: string[];
+}
+
+// Configuração de turnos por local/data
+interface LocationShiftConfig {
+  hasMorning: boolean;
+  hasAfternoon: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════
