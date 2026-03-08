@@ -326,7 +326,7 @@ export default function EstoqueSolicitacoes() {
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => updateStatusMutation.mutate({ id: sol.id, newStatus: NEXT_STATUS[sol.status] })}
+                          onClick={() => updateStatusMutation.mutate({ id: sol.id, newStatus: NEXT_STATUS[sol.status], solicitacao: sol })}
                         >
                           {sol.status === "pendente" && <CheckCircle className="h-4 w-4 mr-1" />}
                           {sol.status === "aprovada" && <Package className="h-4 w-4 mr-1" />}
