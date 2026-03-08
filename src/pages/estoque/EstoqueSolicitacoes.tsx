@@ -192,7 +192,7 @@ export default function EstoqueSolicitacoes() {
       if (error) throw error;
       return (data as unknown as SolicitacaoItem[]).map((item) => ({
         ...item,
-        material_nome: materiais.find((m) => m.id === item.material_id)?.nome || "—",
+        material_nome: todosMateriais.find((m) => m.id === item.material_id)?.nome || "—",
       }));
     },
     enabled: !!viewDialog?.id,
