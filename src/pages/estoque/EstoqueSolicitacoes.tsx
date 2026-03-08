@@ -87,7 +87,6 @@ export default function EstoqueSolicitacoes() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [viewDialog, setViewDialog] = useState<Solicitacao | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>("all");
-  const [searchTerm, setSearchTerm] = useState("");
 
   // Form state
   const [unidadeId, setUnidadeId] = useState("");
