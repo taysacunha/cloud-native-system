@@ -409,6 +409,46 @@ export function BrokerIndividualReport({ teamFilter = "all" }: BrokerIndividualR
     ...queryConfig,
   });
 
+  // Pre-load evaluation details for PDF export
+  const { data: evalDetailsPdf } = useQuery({
+    queryKey: ["broker-eval-details-preload", selectedBrokerId, reportMonths],
+    queryFn: async () => {
+      if (!selectedBrokerId || reportMonths.length === 0) return null;
+      const { data, error } = await supabase
+        .from("broker_evaluations")
+        .select("year_month, obs_feedbacks, acoes_melhorias_c2s, metas_acoes_futuras, average_score")
+        .eq("broker_id", selectedBrokerId)
+        .in("year_month", reportMonths)
+        .order("year_month", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!selectedBrokerId && reportMonths.length > 0,
+    ...queryConfig,
+  });
+
+  const { data: lastVisitDatePdf } = useQuery({
+    queryKey: ["broker-last-visit-preload", selectedBrokerId, reportMonths],
+    queryFn: async () => {
+      if (!selectedBrokerId || reportMonths.length === 0) return null;
+      const { data, error } = await supabase
+        .from("monthly_leads")
+        .select("last_visit_date")
+        .eq("broker_id", selectedBrokerId)
+        .in("year_month", reportMonths)
+        .not("last_visit_date", "is", null)
+        .order("last_visit_date", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      return data?.last_visit_date || null;
+    },
+    enabled: !!selectedBrokerId && reportMonths.length > 0,
+    ...queryConfig,
+  });
+
   const reportSalesData = salesData.filter(s => reportMonths.includes(s.yearMonth));
   const reportProposalsData = proposalsData.filter(p => reportMonths.includes(p.yearMonth));
   const reportLeadsData = leadsData.filter(l => reportMonths.includes(l.yearMonth));
