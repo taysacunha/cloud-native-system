@@ -194,50 +194,71 @@ export default function EstoqueGestores() {
         </div>
       ) : (
         <>
-          {gestoresByUnidade.map(({ unidade, gestores: gs }) => (
-            <Card key={unidade.id}>
-              <CardHeader>
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
                 <CardTitle className="flex items-center gap-2">
-                  <Building2 className="h-5 w-5" /> {unidade.nome}
+                  <Building2 className="h-5 w-5" /> Gestores Cadastrados
                 </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Nome</TableHead>
-                      <TableHead>E-mail</TableHead>
-                      {canManage && <TableHead className="text-right">Ações</TableHead>}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {gs.map((g) => (
-                      <TableRow key={g.id}>
-                        <TableCell className="font-medium">{g.nome_gestor}</TableCell>
-                        <TableCell className="text-muted-foreground">
-                          <span className="flex items-center gap-1">
-                            <Mail className="h-3 w-3" />
-                            {getUserDisplay(g.user_id)}
-                          </span>
-                        </TableCell>
-                        {canManage && (
-                          <TableCell className="text-right">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => setDeleteConfirm({ id: g.id, nome: g.nome_gestor })}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </TableCell>
-                        )}
+                <TableSearch value={searchTerm} onChange={setSearchTerm} placeholder="Buscar por nome, unidade ou e-mail..." />
+              </div>
+            </CardHeader>
+            <CardContent>
+              {paginatedData.length === 0 ? (
+                <p className="text-center text-muted-foreground py-8">Nenhum gestor encontrado</p>
+              ) : (
+                <>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>
+                          <SortableHeader label="Nome" field="nome_gestor" currentField={sortField as string} direction={sortDirection} onSort={setSorting as any} />
+                        </TableHead>
+                        <TableHead>
+                          <SortableHeader label="Unidade" field="unidade_nome" currentField={sortField as string} direction={sortDirection} onSort={setSorting as any} />
+                        </TableHead>
+                        <TableHead>E-mail</TableHead>
+                        {canManage && <TableHead className="text-right">Ações</TableHead>}
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </CardContent>
-            </Card>
-          ))}
+                    </TableHeader>
+                    <TableBody>
+                      {paginatedData.map((g) => (
+                        <TableRow key={g.id}>
+                          <TableCell className="font-medium">{g.nome_gestor}</TableCell>
+                          <TableCell>{g.unidade_nome}</TableCell>
+                          <TableCell className="text-muted-foreground">
+                            <span className="flex items-center gap-1">
+                              <Mail className="h-3 w-3" />
+                              {g.email}
+                            </span>
+                          </TableCell>
+                          {canManage && (
+                            <TableCell className="text-right">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => setDeleteConfirm({ id: g.id, nome: g.nome_gestor })}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </TableCell>
+                          )}
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                  <TablePagination
+                    currentPage={currentPage}
+                    totalPages={totalPages}
+                    itemsPerPage={itemsPerPage}
+                    onPageChange={setCurrentPage}
+                    onItemsPerPageChange={setItemsPerPage}
+                    totalItems={filteredData.length}
+                  />
+                </>
+              )}
+            </CardContent>
+          </Card>
 
           {unidadesSemGestor.length > 0 && (
             <Card>
@@ -250,14 +271,6 @@ export default function EstoqueGestores() {
                     <Badge key={u.id} variant="outline">{u.nome}</Badge>
                   ))}
                 </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {gestores.length === 0 && unidadesSemGestor.length === 0 && (
-            <Card>
-              <CardContent className="py-8 text-center text-muted-foreground">
-                Nenhuma unidade cadastrada. Cadastre unidades no módulo de Férias.
               </CardContent>
             </Card>
           )}
