@@ -496,6 +496,24 @@ function checkTrulyInviolableRules(
     }
   }
   
+  // ═══════════════════════════════════════════════════════════
+  // REGRA: Interno + Externo no mesmo dia = PROIBIDO
+  // Corretor com interno não pode receber externo no mesmo dia
+  // ═══════════════════════════════════════════════════════════
+  const hasInternalSameDay = context.assignments.some(a =>
+    a.broker_id === broker.brokerId &&
+    a.assignment_date === demand.dateStr &&
+    a.location_id !== demand.locationId &&
+    context.internalLocationIds?.has(a.location_id)
+  );
+  if (hasInternalSameDay) {
+    return { 
+      allowed: false, 
+      reason: "Já tem plantão interno no mesmo dia - não pode acumular externo",
+      rule: "INTERNO_EXTERNO_MESMO_DIA"
+    };
+  }
+  
   // REGRA 8: Dias consecutivos externos - NÃO verificada aqui
   // Esta regra foi movida para checkTrulyInviolableRulesWithRelaxation()
   // para permitir relaxamento como último recurso
@@ -655,6 +673,23 @@ function checkTrulyInviolableRulesWithRelaxation(
         rule: "REGRA6_CONSTRUTORA"
       };
     }
+  }
+  
+  // ═══════════════════════════════════════════════════════════
+  // REGRA: Interno + Externo no mesmo dia = PROIBIDO (também no relaxamento)
+  // ═══════════════════════════════════════════════════════════
+  const hasInternalSameDayRelax = context.assignments.some(a =>
+    a.broker_id === broker.brokerId &&
+    a.assignment_date === demand.dateStr &&
+    a.location_id !== demand.locationId &&
+    context.internalLocationIds?.has(a.location_id)
+  );
+  if (hasInternalSameDayRelax) {
+    return { 
+      allowed: false, 
+      reason: "Já tem plantão interno no mesmo dia - não pode acumular externo",
+      rule: "INTERNO_EXTERNO_MESMO_DIA"
+    };
   }
   
   // ═══════════════════════════════════════════════════════════
@@ -3376,6 +3411,16 @@ async function generateWeeklyScheduleWithAccumulator(
       
       // Função para verificar elegibilidade
       const isEligibleForSaturdayInternal = (brokerId: string): { eligible: boolean; reason?: string } => {
+        // ═══════════════════════════════════════════════════════════
+        // CORREÇÃO: Verificar disponibilidade GLOBAL do corretor
+        // A fila de sábado só verifica vínculo local, mas o corretor
+        // pode não ter sábado na disponibilidade global
+        // ═══════════════════════════════════════════════════════════
+        const brokerFromQueue = brokerQueue.find(b => b.brokerId === brokerId);
+        if (brokerFromQueue && !brokerFromQueue.availableWeekdays.includes("saturday")) {
+          return { eligible: false, reason: 'sem sábado na disponibilidade global' };
+        }
+        
         // Verificar se já foi alocado no sábado (neste local)
         if (alreadyAllocatedBrokerIds.has(brokerId)) {
           return { eligible: false, reason: 'já alocado neste local' };
