@@ -382,6 +382,42 @@ export type Database = {
         }
         Relationships: []
       }
+      dev_tracker: {
+        Row: {
+          cost: number
+          created_at: string | null
+          description: string | null
+          display_order: number | null
+          feature_name: string
+          hours: number
+          id: string
+          system_name: string
+          updated_at: string | null
+        }
+        Insert: {
+          cost?: number
+          created_at?: string | null
+          description?: string | null
+          display_order?: number | null
+          feature_name: string
+          hours?: number
+          id?: string
+          system_name: string
+          updated_at?: string | null
+        }
+        Update: {
+          cost?: number
+          created_at?: string | null
+          description?: string | null
+          display_order?: number | null
+          feature_name?: string
+          hours?: number
+          id?: string
+          system_name?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       estoque_gestores: {
         Row: {
           created_at: string | null
