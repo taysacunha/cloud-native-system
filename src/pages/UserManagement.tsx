@@ -62,7 +62,7 @@ import {
 } from "@/components/ui/tooltip";
 
 type SystemRole = "super_admin" | "admin" | "manager" | "supervisor" | "collaborator";
-type SystemName = "escalas" | "vendas" | "ferias";
+type SystemName = "escalas" | "vendas" | "ferias" | "estoque";
 type PermissionType = "view_only" | "view_edit";
 
 interface SystemAccess {
