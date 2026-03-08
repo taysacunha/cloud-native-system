@@ -808,9 +808,59 @@ export function BrokerIndividualReport({ teamFilter = "all" }: BrokerIndividualR
             </Card>
           )}
 
-          {/* Detalhes da Avaliação - apenas no PDF */}
-          {isExporting && (
-            <EvaluationDetailsPDF brokerId={selectedBrokerId} months={reportMonths} />
+          {/* Detalhes da Avaliação - apenas no PDF (dados pré-carregados) */}
+          {isExporting && (evalDetailsPdf?.obs_feedbacks || evalDetailsPdf?.acoes_melhorias_c2s || evalDetailsPdf?.metas_acoes_futuras || lastVisitDatePdf) && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Detalhes da Avaliação</CardTitle>
+                {evalDetailsPdf?.year_month && (
+                  <p className="text-xs text-muted-foreground">
+                    Ref: {evalDetailsPdf.year_month}
+                    {evalDetailsPdf.average_score !== null && ` (Nota: ${evalDetailsPdf.average_score.toFixed(1)})`}
+                  </p>
+                )}
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {lastVisitDatePdf && (
+                  <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                    <div className="flex items-center gap-2 text-xs font-medium text-blue-600 dark:text-blue-400 mb-1">
+                      <Calendar className="h-3 w-3" />
+                      Última Visita
+                    </div>
+                    <p className="text-sm font-medium">
+                      {(() => { const [y,m,d] = lastVisitDatePdf.split("-").map(Number); return new Date(y, m-1, d).toLocaleDateString("pt-BR"); })()}
+                    </p>
+                  </div>
+                )}
+                {evalDetailsPdf?.obs_feedbacks && (
+                  <div className="p-3 bg-muted/50 rounded-lg">
+                    <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground mb-1">
+                      <MessageSquare className="h-3 w-3" />
+                      OBS/Feedbacks
+                    </div>
+                    <p className="text-sm whitespace-pre-wrap">{evalDetailsPdf.obs_feedbacks}</p>
+                  </div>
+                )}
+                {evalDetailsPdf?.acoes_melhorias_c2s && (
+                  <div className="p-3 bg-muted/50 rounded-lg">
+                    <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground mb-1">
+                      <TrendingUpIcon2 className="h-3 w-3" />
+                      Ações para Melhorias C2S
+                    </div>
+                    <p className="text-sm whitespace-pre-wrap">{evalDetailsPdf.acoes_melhorias_c2s}</p>
+                  </div>
+                )}
+                {evalDetailsPdf?.metas_acoes_futuras && (
+                  <div className="p-3 bg-muted/50 rounded-lg">
+                    <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground mb-1">
+                      <Target className="h-3 w-3" />
+                      Metas/Ações Futuras
+                    </div>
+                    <p className="text-sm whitespace-pre-wrap">{evalDetailsPdf.metas_acoes_futuras}</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           )}
 
           {/* Charts */}
