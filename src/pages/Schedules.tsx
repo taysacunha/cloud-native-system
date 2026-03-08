@@ -811,6 +811,12 @@ const Schedules = () => {
         type: l.location_type || 'external' 
       }));
 
+      // 5b. Buscar configuração de turnos por local/data para validação TURNO_NAO_CONFIGURADO
+      const locationShiftConfigs = await buildLocationShiftConfigs(
+        (locationsData || []).map(l => l.id),
+        allMonthAssignments.map(a => a.assignment_date)
+      );
+
       // 6. Executar validação com TODAS as alocações do mês
       const postValidation = postValidateSchedule(
         allMonthAssignments.map(a => ({
@@ -822,7 +828,8 @@ const Schedules = () => {
         brokersForValidation,
         locationsForValidation,
         [], // Sem demandas não alocadas para re-validação
-        locationBrokerConfigs
+        locationBrokerConfigs,
+        locationShiftConfigs
       );
       
       // Log detalhado
