@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -16,6 +16,7 @@ import { useSystemAccess } from "@/hooks/useSystemAccess";
 import { notificarGestoresUnidade, criarNotificacao } from "@/hooks/useEstoqueNotificacoes";
 import { useTableControls } from "@/hooks/useTableControls";
 import { TableSearch, TablePagination, SortableHeader } from "@/components/vendas/TableControls";
+import { useUsuarioUnidades } from "@/hooks/useUsuarioUnidades";
 
 const fromEstoque = (table: string) => supabase.from(table as any);
 
@@ -83,6 +84,7 @@ export default function EstoqueSolicitacoes() {
   const queryClient = useQueryClient();
   const { canEdit, user } = useSystemAccess();
   const canEditEstoque = canEdit("estoque");
+  const { unidadesPermitidas } = useUsuarioUnidades();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [viewDialog, setViewDialog] = useState<Solicitacao | null>(null);
@@ -92,6 +94,13 @@ export default function EstoqueSolicitacoes() {
   const [unidadeId, setUnidadeId] = useState("");
   const [observacoes, setObservacoes] = useState("");
   const [itens, setItens] = useState<{ material_id: string; quantidade: number }[]>([{ material_id: "", quantidade: 1 }]);
+
+  // Auto-fill unit if user has only one
+  useEffect(() => {
+    if (unidadesPermitidas.length === 1 && !unidadeId) {
+      setUnidadeId(unidadesPermitidas[0].id);
+    }
+  }, [unidadesPermitidas, unidadeId]);
 
   const { data: solicitacoes = [], isLoading } = useQuery({
     queryKey: ["estoque-solicitacoes"],
@@ -375,15 +384,20 @@ export default function EstoqueSolicitacoes() {
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>Unidade</Label>
+              <Label>Unidade *</Label>
               <Select value={unidadeId} onValueChange={setUnidadeId}>
                 <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
                 <SelectContent>
-                  {unidades.map((u) => (
+                  {unidadesPermitidas.map((u) => (
                     <SelectItem key={u.id} value={u.id}>{u.nome}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              {unidadesPermitidas.length === 0 && (
+                <p className="text-xs text-destructive mt-1">
+                  Você não está vinculado a nenhuma unidade. Solicite ao administrador.
+                </p>
+              )}
             </div>
             <div>
               <Label>Observações</Label>

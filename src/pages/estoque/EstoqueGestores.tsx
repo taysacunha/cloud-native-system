@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Plus, Trash2, Loader2, Building2, UserPlus, Mail } from "lucide-react";
+import { Plus, Trash2, Loader2, Building2, UserPlus, Mail, Users } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -11,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useUserRole } from "@/hooks/useUserRole";
 import { useTableControls } from "@/hooks/useTableControls";
 import { TableSearch, TablePagination, SortableHeader } from "@/components/vendas/TableControls";
@@ -20,6 +21,13 @@ interface Gestor {
   user_id: string;
   unidade_id: string;
   nome_gestor: string;
+  created_at: string;
+}
+
+interface UsuarioUnidade {
+  id: string;
+  user_id: string;
+  unidade_id: string;
   created_at: string;
 }
 
@@ -34,11 +42,6 @@ interface SystemUser {
   name: string | null;
 }
 
-interface SystemAccess {
-  user_id: string;
-  system_name: string;
-}
-
 const fromEstoque = (table: string) => supabase.from(table as any);
 
 export default function EstoqueGestores() {
@@ -49,6 +52,11 @@ export default function EstoqueGestores() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState({ user_id: "", unidade_id: "" });
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; nome: string } | null>(null);
+
+  // User-unit link state
+  const [linkDialogOpen, setLinkDialogOpen] = useState(false);
+  const [linkForm, setLinkForm] = useState({ user_id: "", unidade_id: "" });
+  const [deleteLinkConfirm, setDeleteLinkConfirm] = useState<{ id: string; nome: string } | null>(null);
 
   const { data: unidades = [] } = useQuery({
     queryKey: ["ferias-unidades-estoque"],
@@ -66,6 +74,17 @@ export default function EstoqueGestores() {
       if (error) throw error;
       return (data || []) as unknown as Gestor[];
     },
+  });
+
+  // Fetch user-unit links
+  const { data: usuarioUnidades = [], isLoading: loadingLinks } = useQuery({
+    queryKey: ["estoque-usuarios-unidades"],
+    queryFn: async () => {
+      const { data, error } = await fromEstoque("estoque_usuarios_unidades").select("*").order("created_at", { ascending: false });
+      if (error) throw error;
+      return (data || []) as unknown as UsuarioUnidade[];
+    },
+    enabled: canManage,
   });
 
   // Fetch users who have access to estoque module
@@ -101,10 +120,9 @@ export default function EstoqueGestores() {
     enabled: canManage && estoqueAccessUserIds.length >= 0,
   });
 
-  // Filter out users already added as gestores
+  // ===== GESTORES =====
   const existingUserIds = new Set(gestores.map((g) => g.user_id));
   const availableUsers = systemUsers.filter((u) => !existingUserIds.has(u.id));
-
   const selectedUser = systemUsers.find((u) => u.id === form.user_id);
 
   const saveMutation = useMutation({
@@ -139,9 +157,47 @@ export default function EstoqueGestores() {
     onError: (err: Error) => toast.error(err.message),
   });
 
+  // ===== USUÁRIOS POR UNIDADE =====
+  const saveLinkMutation = useMutation({
+    mutationFn: async (values: typeof linkForm) => {
+      const { error } = await fromEstoque("estoque_usuarios_unidades").insert({
+        user_id: values.user_id,
+        unidade_id: values.unidade_id,
+      } as any);
+      if (error) {
+        if (error.code === "23505") throw new Error("Este usuário já está vinculado a esta unidade");
+        throw error;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["estoque-usuarios-unidades"] });
+      toast.success("Usuário vinculado à unidade!");
+      closeLinkDialog();
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const deleteLinkMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await fromEstoque("estoque_usuarios_unidades").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["estoque-usuarios-unidades"] });
+      toast.success("Vínculo removido!");
+      setDeleteLinkConfirm(null);
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
   const closeDialog = () => {
     setDialogOpen(false);
     setForm({ user_id: "", unidade_id: "" });
+  };
+
+  const closeLinkDialog = () => {
+    setLinkDialogOpen(false);
+    setLinkForm({ user_id: "", unidade_id: "" });
   };
 
   const handleSubmit = () => {
@@ -150,9 +206,20 @@ export default function EstoqueGestores() {
     saveMutation.mutate(form);
   };
 
+  const handleLinkSubmit = () => {
+    if (!linkForm.user_id) return toast.error("Selecione um usuário");
+    if (!linkForm.unidade_id) return toast.error("Selecione a unidade");
+    saveLinkMutation.mutate(linkForm);
+  };
+
   const getUserDisplay = (userId: string) => {
     const user = systemUsers.find((u) => u.id === userId);
     return user?.email || "";
+  };
+
+  const getUserName = (userId: string) => {
+    const user = systemUsers.find((u) => u.id === userId);
+    return user?.name || user?.email || "—";
   };
 
   // Enrich gestores with unidade nome for search
@@ -162,13 +229,23 @@ export default function EstoqueGestores() {
     email: getUserDisplay(g.user_id),
   }));
 
-  const {
-    searchTerm, setSearchTerm, currentPage, setCurrentPage,
-    itemsPerPage, setItemsPerPage, sortField, sortDirection, setSorting,
-    paginatedData, filteredData, totalPages,
-  } = useTableControls({
+  const gestoresControls = useTableControls({
     data: gestoresEnriched,
     searchField: ["nome_gestor", "unidade_nome", "email"],
+    defaultItemsPerPage: 25,
+  });
+
+  // Enrich user-unit links
+  const linksEnriched = usuarioUnidades.map((l) => ({
+    ...l,
+    nome_usuario: getUserName(l.user_id),
+    email: getUserDisplay(l.user_id),
+    unidade_nome: unidades.find((u) => u.id === l.unidade_id)?.nome || "—",
+  }));
+
+  const linksControls = useTableControls({
+    data: linksEnriched,
+    searchField: ["nome_usuario", "unidade_nome", "email"],
     defaultItemsPerPage: 25,
   });
 
@@ -176,106 +253,208 @@ export default function EstoqueGestores() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Gestores de Estoque</h1>
-          <p className="text-muted-foreground">Defina quem gerencia o estoque de cada unidade</p>
-        </div>
-        {canManage && (
-          <Button onClick={() => setDialogOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" /> Novo Gestor
-          </Button>
-        )}
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight">Gestores e Vínculos</h1>
+        <p className="text-muted-foreground">Gerencie gestores de estoque e vínculos de usuários por unidade</p>
       </div>
 
-      {isLoading ? (
-        <div className="flex justify-center py-8">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-        </div>
-      ) : (
-        <>
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="flex items-center gap-2">
-                  <Building2 className="h-5 w-5" /> Gestores Cadastrados
-                </CardTitle>
-                <TableSearch value={searchTerm} onChange={setSearchTerm} placeholder="Buscar por nome, unidade ou e-mail..." />
-              </div>
-            </CardHeader>
-            <CardContent>
-              {paginatedData.length === 0 ? (
-                <p className="text-center text-muted-foreground py-8">Nenhum gestor encontrado</p>
-              ) : (
-                <>
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>
-                          <SortableHeader label="Nome" field="nome_gestor" currentField={sortField as string} direction={sortDirection} onSort={setSorting as any} />
-                        </TableHead>
-                        <TableHead>
-                          <SortableHeader label="Unidade" field="unidade_nome" currentField={sortField as string} direction={sortDirection} onSort={setSorting as any} />
-                        </TableHead>
-                        <TableHead>E-mail</TableHead>
-                        {canManage && <TableHead className="text-right">Ações</TableHead>}
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {paginatedData.map((g) => (
-                        <TableRow key={g.id}>
-                          <TableCell className="font-medium">{g.nome_gestor}</TableCell>
-                          <TableCell>{g.unidade_nome}</TableCell>
-                          <TableCell className="text-muted-foreground">
-                            <span className="flex items-center gap-1">
-                              <Mail className="h-3 w-3" />
-                              {g.email}
-                            </span>
-                          </TableCell>
-                          {canManage && (
-                            <TableCell className="text-right">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => setDeleteConfirm({ id: g.id, nome: g.nome_gestor })}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </TableCell>
-                          )}
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                  <TablePagination
-                    currentPage={currentPage}
-                    totalPages={totalPages}
-                    itemsPerPage={itemsPerPage}
-                    onPageChange={setCurrentPage}
-                    onItemsPerPageChange={setItemsPerPage}
-                    totalItems={filteredData.length}
-                  />
-                </>
-              )}
-            </CardContent>
-          </Card>
+      <Tabs defaultValue="gestores" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="gestores" className="gap-2">
+            <Building2 className="h-4 w-4" /> Gestores
+          </TabsTrigger>
+          <TabsTrigger value="vinculos" className="gap-2">
+            <Users className="h-4 w-4" /> Usuários por Unidade
+          </TabsTrigger>
+        </TabsList>
 
-          {unidadesSemGestor.length > 0 && (
+        {/* ===== ABA GESTORES ===== */}
+        <TabsContent value="gestores" className="space-y-4">
+          <div className="flex justify-end">
+            {canManage && (
+              <Button onClick={() => setDialogOpen(true)}>
+                <Plus className="mr-2 h-4 w-4" /> Novo Gestor
+              </Button>
+            )}
+          </div>
+
+          {isLoading ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <>
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="flex items-center gap-2">
+                      <Building2 className="h-5 w-5" /> Gestores Cadastrados
+                    </CardTitle>
+                    <TableSearch value={gestoresControls.searchTerm} onChange={gestoresControls.setSearchTerm} placeholder="Buscar por nome, unidade ou e-mail..." />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {gestoresControls.paginatedData.length === 0 ? (
+                    <p className="text-center text-muted-foreground py-8">Nenhum gestor encontrado</p>
+                  ) : (
+                    <>
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>
+                              <SortableHeader label="Nome" field="nome_gestor" currentField={gestoresControls.sortField as string} direction={gestoresControls.sortDirection} onSort={gestoresControls.setSorting as any} />
+                            </TableHead>
+                            <TableHead>
+                              <SortableHeader label="Unidade" field="unidade_nome" currentField={gestoresControls.sortField as string} direction={gestoresControls.sortDirection} onSort={gestoresControls.setSorting as any} />
+                            </TableHead>
+                            <TableHead>E-mail</TableHead>
+                            {canManage && <TableHead className="text-right">Ações</TableHead>}
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {gestoresControls.paginatedData.map((g) => (
+                            <TableRow key={g.id}>
+                              <TableCell className="font-medium">{g.nome_gestor}</TableCell>
+                              <TableCell>{g.unidade_nome}</TableCell>
+                              <TableCell className="text-muted-foreground">
+                                <span className="flex items-center gap-1">
+                                  <Mail className="h-3 w-3" />
+                                  {g.email}
+                                </span>
+                              </TableCell>
+                              {canManage && (
+                                <TableCell className="text-right">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => setDeleteConfirm({ id: g.id, nome: g.nome_gestor })}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </TableCell>
+                              )}
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                      <TablePagination
+                        currentPage={gestoresControls.currentPage}
+                        totalPages={gestoresControls.totalPages}
+                        itemsPerPage={gestoresControls.itemsPerPage}
+                        onPageChange={gestoresControls.setCurrentPage}
+                        onItemsPerPageChange={gestoresControls.setItemsPerPage}
+                        totalItems={gestoresControls.filteredData.length}
+                      />
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+
+              {unidadesSemGestor.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-muted-foreground">Unidades sem gestor</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex flex-wrap gap-2">
+                      {unidadesSemGestor.map((u) => (
+                        <Badge key={u.id} variant="outline">{u.nome}</Badge>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </>
+          )}
+        </TabsContent>
+
+        {/* ===== ABA VÍNCULOS USUÁRIO-UNIDADE ===== */}
+        <TabsContent value="vinculos" className="space-y-4">
+          <div className="flex justify-between items-start">
+            <p className="text-sm text-muted-foreground max-w-lg">
+              Vincule usuários às unidades para controlar quais materiais podem solicitar. 
+              Gestores já têm acesso automático às unidades que gerenciam. Admins acessam todas.
+            </p>
+            {canManage && (
+              <Button onClick={() => setLinkDialogOpen(true)}>
+                <Plus className="mr-2 h-4 w-4" /> Vincular Usuário
+              </Button>
+            )}
+          </div>
+
+          {loadingLinks ? (
+            <div className="flex justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
             <Card>
               <CardHeader>
-                <CardTitle className="text-muted-foreground">Unidades sem gestor</CardTitle>
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center gap-2">
+                    <Users className="h-5 w-5" /> Vínculos Cadastrados
+                  </CardTitle>
+                  <TableSearch value={linksControls.searchTerm} onChange={linksControls.setSearchTerm} placeholder="Buscar por nome, unidade ou e-mail..." />
+                </div>
               </CardHeader>
               <CardContent>
-                <div className="flex flex-wrap gap-2">
-                  {unidadesSemGestor.map((u) => (
-                    <Badge key={u.id} variant="outline">{u.nome}</Badge>
-                  ))}
-                </div>
+                {linksControls.paginatedData.length === 0 ? (
+                  <p className="text-center text-muted-foreground py-8">Nenhum vínculo encontrado</p>
+                ) : (
+                  <>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>
+                            <SortableHeader label="Usuário" field="nome_usuario" currentField={linksControls.sortField as string} direction={linksControls.sortDirection} onSort={linksControls.setSorting as any} />
+                          </TableHead>
+                          <TableHead>
+                            <SortableHeader label="Unidade" field="unidade_nome" currentField={linksControls.sortField as string} direction={linksControls.sortDirection} onSort={linksControls.setSorting as any} />
+                          </TableHead>
+                          <TableHead>E-mail</TableHead>
+                          {canManage && <TableHead className="text-right">Ações</TableHead>}
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {linksControls.paginatedData.map((l) => (
+                          <TableRow key={l.id}>
+                            <TableCell className="font-medium">{l.nome_usuario}</TableCell>
+                            <TableCell>{l.unidade_nome}</TableCell>
+                            <TableCell className="text-muted-foreground">
+                              <span className="flex items-center gap-1">
+                                <Mail className="h-3 w-3" />
+                                {l.email}
+                              </span>
+                            </TableCell>
+                            {canManage && (
+                              <TableCell className="text-right">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => setDeleteLinkConfirm({ id: l.id, nome: `${l.nome_usuario} → ${l.unidade_nome}` })}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </TableCell>
+                            )}
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                    <TablePagination
+                      currentPage={linksControls.currentPage}
+                      totalPages={linksControls.totalPages}
+                      itemsPerPage={linksControls.itemsPerPage}
+                      onPageChange={linksControls.setCurrentPage}
+                      onItemsPerPageChange={linksControls.setItemsPerPage}
+                      totalItems={linksControls.filteredData.length}
+                    />
+                  </>
+                )}
               </CardContent>
             </Card>
           )}
-        </>
-      )}
+        </TabsContent>
+      </Tabs>
 
       {/* Dialog de novo gestor */}
       <Dialog open={dialogOpen} onOpenChange={(open) => { if (!open) closeDialog(); }}>
@@ -339,7 +518,64 @@ export default function EstoqueGestores() {
         </DialogContent>
       </Dialog>
 
-      {/* Confirmação de exclusão */}
+      {/* Dialog de vincular usuário */}
+      <Dialog open={linkDialogOpen} onOpenChange={(open) => { if (!open) closeLinkDialog(); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Users className="h-5 w-5" />
+              Vincular Usuário a Unidade
+            </DialogTitle>
+            <DialogDescription>
+              O usuário poderá solicitar materiais apenas das unidades vinculadas.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Usuário *</Label>
+              <Select value={linkForm.user_id} onValueChange={(v) => setLinkForm({ ...linkForm, user_id: v })}>
+                <SelectTrigger><SelectValue placeholder="Selecione o usuário" /></SelectTrigger>
+                <SelectContent>
+                  {systemUsers.length === 0 ? (
+                    <div className="px-3 py-2 text-sm text-muted-foreground">
+                      Nenhum usuário com acesso ao estoque
+                    </div>
+                  ) : (
+                    systemUsers.map((u) => (
+                      <SelectItem key={u.id} value={u.id}>
+                        <span className="flex items-center gap-2">
+                          <span className="font-medium">{u.name}</span>
+                          <span className="text-muted-foreground text-xs">({u.email})</span>
+                        </span>
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Unidade *</Label>
+              <Select value={linkForm.unidade_id} onValueChange={(v) => setLinkForm({ ...linkForm, unidade_id: v })}>
+                <SelectTrigger><SelectValue placeholder="Selecione a unidade" /></SelectTrigger>
+                <SelectContent>
+                  {unidades.map((u) => (
+                    <SelectItem key={u.id} value={u.id}>{u.nome}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeLinkDialog}>Cancelar</Button>
+            <Button onClick={handleLinkSubmit} disabled={saveLinkMutation.isPending}>
+              {saveLinkMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Vincular
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirmação de exclusão de gestor */}
       <AlertDialog open={!!deleteConfirm} onOpenChange={(open) => { if (!open) setDeleteConfirm(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -355,6 +591,28 @@ export default function EstoqueGestores() {
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               {deleteMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Remover
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Confirmação de exclusão de vínculo */}
+      <AlertDialog open={!!deleteLinkConfirm} onOpenChange={(open) => { if (!open) setDeleteLinkConfirm(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remover vínculo</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja remover o vínculo <strong>{deleteLinkConfirm?.nome}</strong>? O usuário perderá acesso a esta unidade no estoque.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deleteLinkConfirm && deleteLinkMutation.mutate(deleteLinkConfirm.id)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteLinkMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
               Remover
             </AlertDialogAction>
           </AlertDialogFooter>
