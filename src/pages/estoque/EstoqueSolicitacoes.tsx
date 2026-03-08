@@ -85,7 +85,7 @@ export default function EstoqueSolicitacoes() {
   const queryClient = useQueryClient();
   const { canEdit, user } = useSystemAccess();
   const canEditEstoque = canEdit("estoque");
-  const { unidadesPermitidas } = useUsuarioUnidades();
+  const { unidadesPermitidas, getSetorParaUnidade } = useUsuarioUnidades();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [viewDialog, setViewDialog] = useState<Solicitacao | null>(null);
