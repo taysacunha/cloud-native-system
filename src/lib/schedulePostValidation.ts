@@ -381,7 +381,6 @@ export function validateGeneratedSchedule(
     // REGRA 5: Rodízio de externos para corretores Seg-Dom
     // Corretores com sábado devem alternar: 1→2→1→2 ou 2→1→2→1
     // ═══════════════════════════════════════════════════════════
-    const broker = brokers.find(b => b.id === brokerId);
     const hasSaturday = broker?.availableWeekdays?.includes('saturday');
     
     if (hasSaturday && weeklyBreakdown.length >= 2) {
