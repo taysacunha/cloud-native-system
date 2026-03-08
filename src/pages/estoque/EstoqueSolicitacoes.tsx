@@ -175,6 +175,11 @@ export default function EstoqueSolicitacoes() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["estoque-solicitacoes"] });
+      // Notify managers of the selected unit
+      if (unidadeId) {
+        const userName = user?.user_metadata?.name || user?.email || "Usuário";
+        notificarGestoresUnidade(unidadeId, `Nova solicitação de materiais criada por ${userName}`);
+      }
       toast.success("Solicitação criada com sucesso!");
       resetForm();
     },
