@@ -465,7 +465,7 @@ export function BrokerIndividualReport({ teamFilter = "all" }: BrokerIndividualR
 
         // If a single section is taller than usable height, we still place it (it will overflow, but won't be split mid-text)
         pdf.addImage(sectionImgData, "PNG", margin, cursorY, usableWidth, sectionScaledHeight);
-        cursorY += sectionScaledHeight + 3; // 3mm gap between sections
+        cursorY += sectionScaledHeight + 2; // 2mm gap between sections
         isFirstSection = false;
       }
 
