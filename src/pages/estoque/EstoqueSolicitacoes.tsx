@@ -460,7 +460,7 @@ export default function EstoqueSolicitacoes() {
                     <Select value={item.material_id} onValueChange={(v) => updateItem(idx, "material_id", v)}>
                       <SelectTrigger><SelectValue placeholder="Material..." /></SelectTrigger>
                       <SelectContent>
-                        {materiais.map((m) => (
+                        {materiaisDisponiveis.map((m) => (
                           <SelectItem key={m.id} value={m.id}>{m.nome}</SelectItem>
                         ))}
                       </SelectContent>
