@@ -540,6 +540,7 @@ export default function EstoqueSolicitacoes() {
                   <Badge variant="outline" className={STATUS_COLORS[viewDialog.status]}>{STATUS_LABELS[viewDialog.status]}</Badge>
                 </div>
                 <div><span className="text-muted-foreground">Unidade:</span> {getUnidadeNome(viewDialog.unidade_id)}</div>
+                <div><span className="text-muted-foreground">Setor:</span> {getSetorNome(viewDialog.setor_id)}</div>
                 <div><span className="text-muted-foreground">Data:</span> {new Date(viewDialog.created_at).toLocaleDateString("pt-BR")}</div>
               </div>
               {viewDialog.observacoes && (
