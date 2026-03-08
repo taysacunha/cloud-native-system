@@ -450,10 +450,16 @@ export default function EstoqueSolicitacoes() {
             <div className="space-y-3">
               <div className="flex justify-between items-center">
                 <Label>Itens</Label>
-                <Button type="button" size="sm" variant="outline" onClick={addItem}>
+                <Button type="button" size="sm" variant="outline" onClick={addItem} disabled={materiaisDisponiveis.length === 0}>
                   <Plus className="h-3 w-3 mr-1" /> Item
                 </Button>
               </div>
+              {unidadeId && materiaisDisponiveis.length === 0 && (
+                <p className="text-sm text-muted-foreground italic">Nenhum material com saldo disponível nesta unidade.</p>
+              )}
+              {!unidadeId && (
+                <p className="text-sm text-muted-foreground italic">Selecione uma unidade para ver os materiais disponíveis.</p>
+              )}
               {itens.map((item, idx) => (
                 <div key={idx} className="flex gap-2 items-end">
                   <div className="flex-1">
