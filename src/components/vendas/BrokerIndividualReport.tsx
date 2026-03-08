@@ -79,104 +79,6 @@ const queryConfig = {
   refetchOnWindowFocus: false,
 };
 
-// Sub-component to render evaluation details inline for PDF capture
-function EvaluationDetailsPDF({ brokerId, months }: { brokerId: string; months: string[] }) {
-  const { data: evaluation } = useQuery({
-    queryKey: ["broker-eval-details-pdf", brokerId, months],
-    queryFn: async () => {
-      if (!brokerId || months.length === 0) return null;
-      const { data, error } = await supabase
-        .from("broker_evaluations")
-        .select("year_month, obs_feedbacks, acoes_melhorias_c2s, metas_acoes_futuras, average_score")
-        .eq("broker_id", brokerId)
-        .in("year_month", months)
-        .order("year_month", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (error) throw error;
-      return data;
-    },
-    enabled: !!brokerId && months.length > 0,
-    staleTime: 0,
-  });
-
-  const { data: lastVisitDate } = useQuery({
-    queryKey: ["broker-last-visit-pdf", brokerId, months],
-    queryFn: async () => {
-      if (!brokerId || months.length === 0) return null;
-      const { data, error } = await supabase
-        .from("monthly_leads")
-        .select("last_visit_date")
-        .eq("broker_id", brokerId)
-        .in("year_month", months)
-        .not("last_visit_date", "is", null)
-        .order("last_visit_date", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      if (error) throw error;
-      return data?.last_visit_date || null;
-    },
-    enabled: !!brokerId && months.length > 0,
-    staleTime: 0,
-  });
-
-  const hasContent = evaluation?.obs_feedbacks || evaluation?.acoes_melhorias_c2s || evaluation?.metas_acoes_futuras || lastVisitDate;
-  if (!hasContent) return null;
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">Detalhes da Avaliação</CardTitle>
-        {evaluation?.year_month && (
-          <p className="text-xs text-muted-foreground">
-            Ref: {evaluation.year_month}
-            {evaluation.average_score !== null && ` (Nota: ${evaluation.average_score.toFixed(1)})`}
-          </p>
-        )}
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {lastVisitDate && (
-          <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-            <div className="flex items-center gap-2 text-xs font-medium text-blue-600 dark:text-blue-400 mb-1">
-              <Calendar className="h-3 w-3" />
-              Última Visita
-            </div>
-            <p className="text-sm font-medium">
-              {(() => { const [y,m,d] = lastVisitDate.split("-").map(Number); return new Date(y, m-1, d).toLocaleDateString("pt-BR"); })()}
-            </p>
-          </div>
-        )}
-        {evaluation?.obs_feedbacks && (
-          <div className="p-3 bg-muted/50 rounded-lg">
-            <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground mb-1">
-              <MessageSquare className="h-3 w-3" />
-              OBS/Feedbacks
-            </div>
-            <p className="text-sm whitespace-pre-wrap">{evaluation.obs_feedbacks}</p>
-          </div>
-        )}
-        {evaluation?.acoes_melhorias_c2s && (
-          <div className="p-3 bg-muted/50 rounded-lg">
-            <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground mb-1">
-              <TrendingUpIcon2 className="h-3 w-3" />
-              Ações para Melhorias C2S
-            </div>
-            <p className="text-sm whitespace-pre-wrap">{evaluation.acoes_melhorias_c2s}</p>
-          </div>
-        )}
-        {evaluation?.metas_acoes_futuras && (
-          <div className="p-3 bg-muted/50 rounded-lg">
-            <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground mb-1">
-              <Target className="h-3 w-3" />
-              Metas/Ações Futuras
-            </div>
-            <p className="text-sm whitespace-pre-wrap">{evaluation.metas_acoes_futuras}</p>
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
 
 interface BrokerIndividualReportProps {
   teamFilter?: string;
@@ -409,6 +311,46 @@ export function BrokerIndividualReport({ teamFilter = "all" }: BrokerIndividualR
     ...queryConfig,
   });
 
+  // Pre-load evaluation details for PDF export
+  const { data: evalDetailsPdf } = useQuery({
+    queryKey: ["broker-eval-details-preload", selectedBrokerId, reportMonths],
+    queryFn: async () => {
+      if (!selectedBrokerId || reportMonths.length === 0) return null;
+      const { data, error } = await supabase
+        .from("broker_evaluations")
+        .select("year_month, obs_feedbacks, acoes_melhorias_c2s, metas_acoes_futuras, average_score")
+        .eq("broker_id", selectedBrokerId)
+        .in("year_month", reportMonths)
+        .order("year_month", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!selectedBrokerId && reportMonths.length > 0,
+    ...queryConfig,
+  });
+
+  const { data: lastVisitDatePdf } = useQuery({
+    queryKey: ["broker-last-visit-preload", selectedBrokerId, reportMonths],
+    queryFn: async () => {
+      if (!selectedBrokerId || reportMonths.length === 0) return null;
+      const { data, error } = await supabase
+        .from("monthly_leads")
+        .select("last_visit_date")
+        .eq("broker_id", selectedBrokerId)
+        .in("year_month", reportMonths)
+        .not("last_visit_date", "is", null)
+        .order("last_visit_date", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throw error;
+      return data?.last_visit_date || null;
+    },
+    enabled: !!selectedBrokerId && reportMonths.length > 0,
+    ...queryConfig,
+  });
+
   const reportSalesData = salesData.filter(s => reportMonths.includes(s.yearMonth));
   const reportProposalsData = proposalsData.filter(p => reportMonths.includes(p.yearMonth));
   const reportLeadsData = leadsData.filter(l => reportMonths.includes(l.yearMonth));
@@ -451,7 +393,7 @@ export function BrokerIndividualReport({ teamFilter = "all" }: BrokerIndividualR
     setIsExporting(true);
     try {
       // Wait for React to render PDF-only blocks
-      await new Promise(r => setTimeout(r, 150));
+      await new Promise(r => setTimeout(r, 300));
       const canvas = await html2canvas(reportRef.current, {
         scale: 2,
         useCORS: true,
@@ -768,9 +710,59 @@ export function BrokerIndividualReport({ teamFilter = "all" }: BrokerIndividualR
             </Card>
           )}
 
-          {/* Detalhes da Avaliação - apenas no PDF */}
-          {isExporting && (
-            <EvaluationDetailsPDF brokerId={selectedBrokerId} months={reportMonths} />
+          {/* Detalhes da Avaliação - apenas no PDF (dados pré-carregados) */}
+          {isExporting && (evalDetailsPdf?.obs_feedbacks || evalDetailsPdf?.acoes_melhorias_c2s || evalDetailsPdf?.metas_acoes_futuras || lastVisitDatePdf) && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Detalhes da Avaliação</CardTitle>
+                {evalDetailsPdf?.year_month && (
+                  <p className="text-xs text-muted-foreground">
+                    Ref: {evalDetailsPdf.year_month}
+                    {evalDetailsPdf.average_score !== null && ` (Nota: ${evalDetailsPdf.average_score.toFixed(1)})`}
+                  </p>
+                )}
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {lastVisitDatePdf && (
+                  <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                    <div className="flex items-center gap-2 text-xs font-medium text-blue-600 dark:text-blue-400 mb-1">
+                      <Calendar className="h-3 w-3" />
+                      Última Visita
+                    </div>
+                    <p className="text-sm font-medium">
+                      {(() => { const [y,m,d] = lastVisitDatePdf.split("-").map(Number); return new Date(y, m-1, d).toLocaleDateString("pt-BR"); })()}
+                    </p>
+                  </div>
+                )}
+                {evalDetailsPdf?.obs_feedbacks && (
+                  <div className="p-3 bg-muted/50 rounded-lg">
+                    <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground mb-1">
+                      <MessageSquare className="h-3 w-3" />
+                      OBS/Feedbacks
+                    </div>
+                    <p className="text-sm whitespace-pre-wrap">{evalDetailsPdf.obs_feedbacks}</p>
+                  </div>
+                )}
+                {evalDetailsPdf?.acoes_melhorias_c2s && (
+                  <div className="p-3 bg-muted/50 rounded-lg">
+                    <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground mb-1">
+                      <TrendingUpIcon2 className="h-3 w-3" />
+                      Ações para Melhorias C2S
+                    </div>
+                    <p className="text-sm whitespace-pre-wrap">{evalDetailsPdf.acoes_melhorias_c2s}</p>
+                  </div>
+                )}
+                {evalDetailsPdf?.metas_acoes_futuras && (
+                  <div className="p-3 bg-muted/50 rounded-lg">
+                    <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground mb-1">
+                      <Target className="h-3 w-3" />
+                      Metas/Ações Futuras
+                    </div>
+                    <p className="text-sm whitespace-pre-wrap">{evalDetailsPdf.metas_acoes_futuras}</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
           )}
 
           {/* Charts */}
