@@ -92,6 +92,8 @@ export function BrokerIndividualReport({ teamFilter = "all" }: BrokerIndividualR
   const [selectedQuarter, setSelectedQuarter] = useState("1");
   const [selectedSemester, setSelectedSemester] = useState("1");
   const [isExporting, setIsExporting] = useState(false);
+  const [pdfEvaluationSnapshot, setPdfEvaluationSnapshot] = useState<any | null>(null);
+  const [pdfLastVisitSnapshot, setPdfLastVisitSnapshot] = useState<string | null>(null);
   const [evaluationDetailsOpen, setEvaluationDetailsOpen] = useState(false);
   const reportRef = useRef<HTMLDivElement>(null);
 
