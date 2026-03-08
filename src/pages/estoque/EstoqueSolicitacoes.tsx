@@ -119,7 +119,45 @@ export default function EstoqueSolicitacoes() {
     },
   });
 
-  const { data: materiais = [] } = useQuery({
+  // Fetch materials available in the selected unit (have stock > 0)
+  const { data: materiaisDisponiveis = [] } = useQuery({
+    queryKey: ["estoque-materiais-por-unidade", unidadeId],
+    queryFn: async () => {
+      if (!unidadeId) return [];
+      // Get storage locations for this unit
+      const { data: locais, error: locaisError } = await fromEstoque("estoque_locais_armazenamento")
+        .select("id")
+        .eq("unidade_id", unidadeId)
+        .eq("is_active", true);
+      if (locaisError) throw locaisError;
+      if (!locais || locais.length === 0) return [];
+
+      const localIds = (locais as any[]).map((l: any) => l.id);
+
+      // Get materials with stock > 0 in those locations
+      const { data: saldos, error: saldosError } = await fromEstoque("estoque_saldos")
+        .select("material_id")
+        .in("local_armazenamento_id", localIds)
+        .gt("quantidade", 0);
+      if (saldosError) throw saldosError;
+      if (!saldos || saldos.length === 0) return [];
+
+      const materialIds = [...new Set((saldos as any[]).map((s: any) => s.material_id))];
+
+      // Fetch material details
+      const { data: mats, error: matsError } = await fromEstoque("estoque_materiais")
+        .select("id, nome, unidade_medida")
+        .in("id", materialIds)
+        .eq("is_active", true)
+        .order("nome");
+      if (matsError) throw matsError;
+      return mats as unknown as Material[];
+    },
+    enabled: !!unidadeId,
+  });
+
+  // Also fetch all materials for the view dialog (to resolve names)
+  const { data: todosMateriais = [] } = useQuery({
     queryKey: ["estoque-materiais-ativos"],
     queryFn: async () => {
       const { data, error } = await fromEstoque("estoque_materiais")
