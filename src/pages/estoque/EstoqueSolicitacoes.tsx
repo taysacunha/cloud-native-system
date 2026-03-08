@@ -384,6 +384,7 @@ export default function EstoqueSolicitacoes() {
                       <SortableHeader label="Solicitante" field="solicitante_nome" currentField={sortField as string} direction={sortDirection} onSort={setSorting as any} />
                     </TableHead>
                     <TableHead>Unidade</TableHead>
+                    <TableHead>Setor</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>
                       <SortableHeader label="Data" field="created_at" currentField={sortField as string} direction={sortDirection} onSort={setSorting as any} />
@@ -396,6 +397,7 @@ export default function EstoqueSolicitacoes() {
                     <TableRow key={sol.id}>
                       <TableCell className="font-medium">{sol.solicitante_nome}</TableCell>
                       <TableCell>{getUnidadeNome(sol.unidade_id)}</TableCell>
+                      <TableCell>{getSetorNome(sol.setor_id)}</TableCell>
                       <TableCell>
                         <Badge variant="outline" className={STATUS_COLORS[sol.status] || ""}>
                           {STATUS_LABELS[sol.status] || sol.status}
