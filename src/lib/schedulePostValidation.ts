@@ -94,7 +94,8 @@ export function validateGeneratedSchedule(
   brokers: BrokerInfo[],
   locations: LocationInfo[],
   unallocatedDemands: UnallocatedDemand[] = [],
-  locationBrokerConfigs?: Map<string, string[]> // Map<locationId, brokerId[]> - corretores CONFIGURADOS por local
+  locationBrokerConfigs?: Map<string, string[]>, // Map<locationId, brokerId[]> - corretores CONFIGURADOS por local
+  locationShiftConfigs?: Map<string, Map<string, LocationShiftConfig>> // Map<locationId, Map<dateStr, config>>
 ): PostValidationResult {
   const violations: PostValidationViolation[] = [];
   const brokerReports: BrokerValidationReport[] = [];
