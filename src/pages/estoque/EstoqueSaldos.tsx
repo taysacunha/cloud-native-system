@@ -52,7 +52,6 @@ export default function EstoqueSaldos() {
   const [entradaDialog, setEntradaDialog] = useState(false);
   const [ajusteDialog, setAjusteDialog] = useState(false);
   const [transferenciaDialog, setTransferenciaDialog] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
 
   // Form state
   const [materialId, setMaterialId] = useState("");
