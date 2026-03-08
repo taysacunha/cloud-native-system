@@ -563,7 +563,7 @@ function UserManagementContent() {
 
                 <div className="space-y-2">
                   <Label>Sistemas e Permissões</Label>
-                  {(["escalas", "vendas", "ferias"] as SystemName[]).map(sys => {
+                  {(["escalas", "vendas", "ferias", "estoque"] as SystemName[]).map(sys => {
                     const access = inviteSystems.find(s => s.system_name === sys);
                     return (
                       <div key={sys} className="flex items-center gap-3 p-2 border rounded">
