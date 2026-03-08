@@ -1,57 +1,88 @@
 
 
-## Plano - 4 Correções
+## Plano: Popular o Dev Tracker com todas as funcionalidades desenvolvidas
 
-### 1. Dialog de corretores quebrado (sem scroll)
+Após análise completa do projeto, identifiquei as funcionalidades por sistema. O plano é inserir registros na tabela `dev_tracker` via SQL com todos os itens abaixo. As horas e valores serão estimativas baseadas na complexidade do código (linhas, componentes, lógica).
 
-**Problema:** O `DialogContent` em `SalesBrokers.tsx` (linha 473) não tem limite de altura. Com os novos campos CRECI e Nome de Exibição, o conteúdo ultrapassa a viewport e os botões Cancelar/Salvar ficam inacessíveis.
+### Inventário de funcionalidades por sistema
 
-**Solução:** Adicionar `className="max-w-lg max-h-[90vh] overflow-y-auto"` ao `DialogContent` (linha 473). O `DialogFooter` (linha 638) receberá `className="sticky bottom-0 bg-background pt-4 border-t"` para ficar sempre visível.
+**1. Login / Infraestrutura** (~14 itens)
+- Autenticação (login, registro, recuperação de senha, validação de força)
+- Seleção de sistema (tela multi-sistema)
+- Gerenciamento de usuários (CRUD, convite por e-mail, roles)
+- Sistema de roles (super_admin, admin, manager, supervisor, collaborator, broker)
+- Controle de acesso por sistema (system_access com view/view_edit)
+- RoleGuard e ProtectedRoute
+- Controle de sessão única (useSessionControl)
+- Logout por inatividade (useInactivityLogout)
+- Primeiro admin setup (FirstAdminSetup)
+- Edge Functions (invite-user, list-users, manage-user, deactivate-expired-notice)
+- Perfil do usuário
+- Logs de auditoria por módulo (AuditLogsPanel)
+- Code splitting e lazy loading
+- Componentes reutilizáveis (TableControls, paginação, busca, ordenação)
 
-**Arquivo:** `src/pages/vendas/SalesBrokers.tsx` (linhas 473, 638)
+**2. Sistema de Escalas (Plantões)** (~12 itens)
+- Dashboard com estatísticas (gráficos, top corretores/locais)
+- CRUD de corretores (com disponibilidade por dia/turno)
+- CRUD de locais (internos/externos, configuração de períodos)
+- Gerador automático de escalas (~4500 linhas de lógica)
+- Calendário de escalas (visualização e edição)
+- Substituição e troca de plantões
+- Fila de rodízio por local (location_rotation_queue)
+- Fila de rodízio de sábado (saturday_rotation_queue)
+- Validador de regras de escala
+- Relatórios e consultas (5 abas: básico, performance, distribuição, temporal, local)
+- Exportação PDF de escalas
+- Histórico mensal agregado (assignment_history_monthly)
 
----
+**3. Sistema de Vendas** (~10 itens)
+- Dashboard com resumo de VGV, vendas, propostas
+- CRUD de equipes de vendas
+- CRUD de corretores de vendas
+- Registro de vendas (com valor proporcional por corretor)
+- Gestão de propostas
+- Gestão de leads mensais
+- Avaliações C2S (14 critérios, cálculo automático, classificação)
+- Ranking de corretores e equipes
+- Relatórios de vendas (PDF individual por corretor)
+- Logs de auditoria de vendas
 
-### 2. Relatório Corretores Vendas - dados de meses sem cadastro
+**4. Sistema de Férias / Folgas** (~16 itens)
+- Dashboard de férias
+- Estrutura organizacional (unidades, setores, equipes, cargos)
+- CRUD de colaboradores (com filtros avançados)
+- Gestão de férias (programação, aprovação, gozo, redução)
+- Gerador automático de férias
+- Gestão de folgas (gerador, mover, trocar, remover, perda)
+- Folgas de sábado por setor
+- Formulário anual de férias
+- Calendário (férias, folgas, aniversariantes)
+- Aniversariantes
+- Créditos de férias
+- Configurações (feriados, folgas, quinzenas, regras, avançado)
+- Relatórios (consulta geral, PDF de aniversariantes, formulário, exceções, contador)
+- Atualização automática de status de férias (função SQL)
 
-**Problema:** No modo mensal, o `months` (linha 200-224) inclui o mês anterior para "contexto de evolução". Os totais (linhas 400-409) e queries de `saleDetails`, `proposalsData`, `leadsData`, `evaluationsData` usam esse array completo, então dados do mês anterior "vazam" para o mês selecionado.
+**5. Sistema de Estoque** (~10 itens)
+- Dashboard de estoque
+- CRUD de materiais (com categorias)
+- CRUD de locais de armazenamento
+- Gestão de saldos
+- Solicitações de materiais (workflow com status)
+- Movimentações de estoque (entrada/saída)
+- Notificações de estoque
+- Gestão de gestores (vínculo unidade-usuário)
+- Logs de auditoria de estoque
+- Controle de acesso por unidade (useUsuarioUnidades)
 
-**Solução:** Criar um `reportMonths` separado que contém apenas o mês selecionado (sem o anterior). Usar `reportMonths` para calcular totais e buscar `saleDetails`. Manter `months` completo apenas para os gráficos de evolução (`salesData`, `proposalsData`, `leadsData`, `evaluationsData` nos charts).
+### Implementação
 
-Concretamente:
-- Adicionar `const reportMonths = periodType === "month" ? [months[months.length - 1]] : months;`
-- Alterar `totalVGV`, `totalSales` para somar apenas entries cujo `month` esteja em `reportMonths`
-- Alterar `totalProposals`, `totalConverted`, `totalLeads`, `totalLeadsActive`, `totalVisits`, `avgScore` idem
-- Alterar query de `saleDetails` para usar `reportMonths` no `.in("year_month", ...)`
-
-**Arquivo:** `src/components/vendas/BrokerIndividualReport.tsx` (linhas ~200, 384-409)
-
----
-
-### 3. Divs de vendas/avaliação não aparecem no PDF
-
-**Problema:** `hidden print:block` (linhas 713, 753) funciona com `window.print()` mas **não** com `html2canvas`, que captura o estado visual atual do DOM. Os elementos ficam `display:none` durante a captura.
-
-**Solução:** Usar o estado `isExporting` (já existe, linha 192) para controlar visibilidade:
-- Trocar `className="hidden print:block"` por renderização condicional: `{isExporting && saleDetails.length > 0 && (<Card>...</Card>)}`
-- No `handleExportPDF` (linha 428), o `setIsExporting(true)` já é chamado antes do `html2canvas`. Adicionar um `await new Promise(r => setTimeout(r, 100))` entre o `setIsExporting(true)` e o `html2canvas` para dar tempo ao React de renderizar os blocos.
-
-**Arquivo:** `src/components/vendas/BrokerIndividualReport.tsx` (linhas 711-755, 434-436)
-
----
-
-### 4. Ajuste de qualidade - acessibilidade do dialog
-
-**Identificado:** O `DialogContent` de corretores já tem `DialogDescription`, então está ok. Verificar se outros dialogs do mesmo arquivo têm `DialogDescription` para evitar warnings no console.
-
-**Arquivo:** `src/pages/vendas/SalesBrokers.tsx`
-
----
-
-### Resumo
+Será executado um INSERT em massa na tabela `dev_tracker` com todos os registros acima, com estimativas de horas baseadas na complexidade real do código. Os valores (R$) serão deixados em 0 para você preencher manualmente pela interface, já que esse é o custo comercial que só você define.
 
 | Arquivo | Alteração |
 |---------|-----------|
-| `SalesBrokers.tsx` | Scroll + footer sticky no dialog |
-| `BrokerIndividualReport.tsx` | `reportMonths` para totais, renderização condicional por `isExporting` |
+| Migration SQL | INSERT de ~62 registros na tabela `dev_tracker` |
+
+Nenhuma alteração de código frontend necessária — apenas dados.
 
