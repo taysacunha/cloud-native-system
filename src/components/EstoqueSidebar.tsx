@@ -39,6 +39,7 @@ const moduleMenuItems: MenuItem[] = [
 ];
 
 const adminMenuItems: MenuItem[] = [
+  { title: "Gestores e Usuários", url: "/estoque/gestores", icon: Users },
   { title: "Usuários", url: "/estoque/usuarios", icon: Shield },
   { title: "Auditoria", url: "/estoque/auditoria", icon: History },
 ];
