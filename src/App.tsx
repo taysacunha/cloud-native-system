@@ -31,6 +31,8 @@ const UserManagement = lazy(() => import("./pages/UserManagement"));
 const Help = lazy(() => import("./pages/Help"));
 const EscalasAuditLogs = lazy(() => import("./pages/EscalasAuditLogs"));
 const NotFound = lazy(() => import("./pages/NotFound"));
+const DevTracker = lazy(() => import("./pages/DevTracker"));
+const DeployGuide = lazy(() => import("./pages/DeployGuide"));
 
 // Vendas
 const VendasDashboard = lazy(() => import("./pages/vendas/VendasDashboard"));
