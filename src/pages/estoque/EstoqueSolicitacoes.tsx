@@ -429,7 +429,7 @@ export default function EstoqueSolicitacoes() {
           <div className="space-y-4">
             <div>
               <Label>Unidade *</Label>
-              <Select value={unidadeId} onValueChange={setUnidadeId}>
+              <Select value={unidadeId} onValueChange={handleUnidadeChange}>
                 <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
                 <SelectContent>
                   {unidadesPermitidas.map((u) => (
