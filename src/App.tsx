@@ -194,6 +194,10 @@ const App = () => {
               <Route path="auditoria" element={<RoleGuard allowedRoles={["super_admin", "admin"]}><EstoqueAuditLogs /></RoleGuard>} />
             </Route>
 
+            {/* Dev (oculto, protegido por código) */}
+            <Route path="/dev" element={<Suspense fallback={<DashboardSkeleton />}><DevTracker /></Suspense>} />
+            <Route path="/dev/deploy-guide" element={<Suspense fallback={<DashboardSkeleton />}><DeployGuide /></Suspense>} />
+
             {/* 404 */}
             <Route
               path="*"
