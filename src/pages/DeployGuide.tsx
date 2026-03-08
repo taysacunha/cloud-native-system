@@ -576,7 +576,7 @@ docker compose logs -f functions  # Edge Functions`}</CodeBlock>
       <Step n={12} title="Checklist Final">
         <div className="space-y-2">
           {[
-            "WSL2 instalado e Docker Engine funcionando dentro dele",
+            "WSL2 instalado e Docker (Desktop ou Engine) funcionando",
             "Supabase Self-Hosted rodando (docker compose ps — ~15 containers)",
             "JWT_SECRET, ANON_KEY e SERVICE_ROLE_KEY configurados no .env",
             "SMTP configurado (testar enviando convite de usuário)",
