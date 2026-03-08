@@ -111,6 +111,9 @@ export default function EstoqueSolicitacoes() {
   const handleUnidadeChange = (newUnidadeId: string) => {
     setUnidadeId(newUnidadeId);
     setItens([{ material_id: "", quantidade: 1 }]);
+    // Auto-fill setor from user's vinculo
+    const setor = getSetorParaUnidade(newUnidadeId);
+    setSetorId(setor.setor_id || "");
   };
 
   const { data: solicitacoes = [], isLoading } = useQuery({
