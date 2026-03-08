@@ -8,7 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useUserRole } from "@/hooks/useUserRole";
 
@@ -31,6 +32,11 @@ interface SystemUser {
   name: string | null;
 }
 
+interface SystemAccess {
+  user_id: string;
+  system_name: string;
+}
+
 const fromEstoque = (table: string) => supabase.from(table as any);
 
 export default function EstoqueGestores() {
@@ -40,6 +46,7 @@ export default function EstoqueGestores() {
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState({ user_id: "", unidade_id: "" });
+  const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; nome: string } | null>(null);
 
   const { data: unidades = [] } = useQuery({
     queryKey: ["ferias-unidades-estoque"],
@@ -59,20 +66,37 @@ export default function EstoqueGestores() {
     },
   });
 
-  // Fetch system users via edge function (same as UserManagement)
+  // Fetch users who have access to estoque module
+  const { data: estoqueAccessUserIds = [] } = useQuery({
+    queryKey: ["estoque-access-users"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("system_access" as any)
+        .select("user_id")
+        .eq("system_name", "estoque");
+      if (error) throw error;
+      return (data || []).map((r: any) => r.user_id as string);
+    },
+    enabled: canManage,
+  });
+
+  // Fetch system users via edge function, then filter by estoque access
   const { data: systemUsers = [] } = useQuery({
-    queryKey: ["system-users-for-gestores"],
+    queryKey: ["system-users-for-gestores", estoqueAccessUserIds],
     queryFn: async () => {
       const { data, error } = await supabase.functions.invoke("list-users");
       if (error) throw error;
       const users = data?.users || [];
-      return users.map((u: any) => ({
-        id: u.id,
-        email: u.email,
-        name: u.name || u.user_metadata?.name || u.email,
-      })) as SystemUser[];
+      const accessSet = new Set(estoqueAccessUserIds);
+      return users
+        .filter((u: any) => accessSet.has(u.id))
+        .map((u: any) => ({
+          id: u.id,
+          email: u.email,
+          name: u.name || u.user_metadata?.name || u.email,
+        })) as SystemUser[];
     },
-    enabled: canManage,
+    enabled: canManage && estoqueAccessUserIds.length >= 0,
   });
 
   // Filter out users already added as gestores
@@ -108,6 +132,7 @@ export default function EstoqueGestores() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["estoque-gestores"] });
       toast.success("Gestor removido!");
+      setDeleteConfirm(null);
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -123,7 +148,6 @@ export default function EstoqueGestores() {
     saveMutation.mutate(form);
   };
 
-  // Find user email/name for display in table
   const getUserDisplay = (userId: string) => {
     const user = systemUsers.find((u) => u.id === userId);
     return user?.email || "";
@@ -186,7 +210,11 @@ export default function EstoqueGestores() {
                         </TableCell>
                         {canManage && (
                           <TableCell className="text-right">
-                            <Button variant="ghost" size="icon" onClick={() => deleteMutation.mutate(g.id)}>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => setDeleteConfirm({ id: g.id, nome: g.nome_gestor })}
+                            >
                               <Trash2 className="h-4 w-4" />
                             </Button>
                           </TableCell>
@@ -224,6 +252,7 @@ export default function EstoqueGestores() {
         </>
       )}
 
+      {/* Dialog de novo gestor */}
       <Dialog open={dialogOpen} onOpenChange={(open) => { if (!open) closeDialog(); }}>
         <DialogContent>
           <DialogHeader>
@@ -231,6 +260,9 @@ export default function EstoqueGestores() {
               <UserPlus className="h-5 w-5" />
               Novo Gestor de Estoque
             </DialogTitle>
+            <DialogDescription>
+              Apenas usuários com acesso ao módulo de estoque são listados.
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
@@ -240,7 +272,7 @@ export default function EstoqueGestores() {
                 <SelectContent>
                   {availableUsers.length === 0 ? (
                     <div className="px-3 py-2 text-sm text-muted-foreground">
-                      Todos os usuários já são gestores
+                      Nenhum usuário disponível com acesso ao módulo de estoque
                     </div>
                   ) : (
                     availableUsers.map((u) => (
@@ -281,6 +313,28 @@ export default function EstoqueGestores() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Confirmação de exclusão */}
+      <AlertDialog open={!!deleteConfirm} onOpenChange={(open) => { if (!open) setDeleteConfirm(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar remoção</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja remover <strong>{deleteConfirm?.nome}</strong> como gestor? Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => deleteConfirm && deleteMutation.mutate(deleteConfirm.id)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Remover
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
