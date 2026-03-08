@@ -25,6 +25,7 @@ interface Solicitacao {
   solicitante_user_id: string;
   solicitante_nome: string;
   unidade_id: string | null;
+  setor_id: string | null;
   status: string;
   observacoes: string | null;
   created_at: string;
@@ -84,7 +85,7 @@ export default function EstoqueSolicitacoes() {
   const queryClient = useQueryClient();
   const { canEdit, user } = useSystemAccess();
   const canEditEstoque = canEdit("estoque");
-  const { unidadesPermitidas } = useUsuarioUnidades();
+  const { unidadesPermitidas, getSetorParaUnidade } = useUsuarioUnidades();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [viewDialog, setViewDialog] = useState<Solicitacao | null>(null);
@@ -92,13 +93,17 @@ export default function EstoqueSolicitacoes() {
 
   // Form state
   const [unidadeId, setUnidadeId] = useState("");
+  const [setorId, setSetorId] = useState("");
   const [observacoes, setObservacoes] = useState("");
   const [itens, setItens] = useState<{ material_id: string; quantidade: number }[]>([{ material_id: "", quantidade: 1 }]);
 
   // Auto-fill unit if user has only one
   useEffect(() => {
     if (unidadesPermitidas.length === 1 && !unidadeId) {
-      setUnidadeId(unidadesPermitidas[0].id);
+      const uid = unidadesPermitidas[0].id;
+      setUnidadeId(uid);
+      const setor = getSetorParaUnidade(uid);
+      if (setor.setor_id) setSetorId(setor.setor_id);
     }
   }, [unidadesPermitidas, unidadeId]);
 
@@ -106,6 +111,9 @@ export default function EstoqueSolicitacoes() {
   const handleUnidadeChange = (newUnidadeId: string) => {
     setUnidadeId(newUnidadeId);
     setItens([{ material_id: "", quantidade: 1 }]);
+    // Auto-fill setor from user's vinculo
+    const setor = getSetorParaUnidade(newUnidadeId);
+    setSetorId(setor.setor_id || "");
   };
 
   const { data: solicitacoes = [], isLoading } = useQuery({
@@ -182,6 +190,16 @@ export default function EstoqueSolicitacoes() {
     },
   });
 
+  // Fetch setores for display
+  const { data: setores = [] } = useQuery({
+    queryKey: ["ferias-setores-solicitacoes"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("ferias_setores").select("id, nome").order("nome");
+      if (error) throw error;
+      return data as { id: string; nome: string }[];
+    },
+  });
+
   const { data: viewItens = [] } = useQuery({
     queryKey: ["estoque-solicitacao-itens", viewDialog?.id],
     queryFn: async () => {
@@ -211,6 +229,7 @@ export default function EstoqueSolicitacoes() {
           solicitante_user_id: user.id,
           solicitante_nome: userName,
           unidade_id: unidadeId || null,
+          setor_id: setorId || null,
           observacoes: observacoes || null,
         } as any)
         .select("id")
@@ -281,6 +300,7 @@ export default function EstoqueSolicitacoes() {
   const resetForm = () => {
     setDialogOpen(false);
     setUnidadeId("");
+    setSetorId("");
     setObservacoes("");
     setItens([{ material_id: "", quantidade: 1 }]);
   };
@@ -306,6 +326,10 @@ export default function EstoqueSolicitacoes() {
   });
 
   const getUnidadeNome = (id: string | null) => unidades.find((u) => u.id === id)?.nome || "—";
+  const getSetorNome = (id: string | null) => {
+    if (!id) return "—";
+    return setores.find((s) => s.id === id)?.nome || "—";
+  };
 
   return (
     <div className="space-y-6">
@@ -360,6 +384,7 @@ export default function EstoqueSolicitacoes() {
                       <SortableHeader label="Solicitante" field="solicitante_nome" currentField={sortField as string} direction={sortDirection} onSort={setSorting as any} />
                     </TableHead>
                     <TableHead>Unidade</TableHead>
+                    <TableHead>Setor</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>
                       <SortableHeader label="Data" field="created_at" currentField={sortField as string} direction={sortDirection} onSort={setSorting as any} />
@@ -372,6 +397,7 @@ export default function EstoqueSolicitacoes() {
                     <TableRow key={sol.id}>
                       <TableCell className="font-medium">{sol.solicitante_nome}</TableCell>
                       <TableCell>{getUnidadeNome(sol.unidade_id)}</TableCell>
+                      <TableCell>{getSetorNome(sol.setor_id)}</TableCell>
                       <TableCell>
                         <Badge variant="outline" className={STATUS_COLORS[sol.status] || ""}>
                           {STATUS_LABELS[sol.status] || sol.status}
@@ -514,6 +540,7 @@ export default function EstoqueSolicitacoes() {
                   <Badge variant="outline" className={STATUS_COLORS[viewDialog.status]}>{STATUS_LABELS[viewDialog.status]}</Badge>
                 </div>
                 <div><span className="text-muted-foreground">Unidade:</span> {getUnidadeNome(viewDialog.unidade_id)}</div>
+                <div><span className="text-muted-foreground">Setor:</span> {getSetorNome(viewDialog.setor_id)}</div>
                 <div><span className="text-muted-foreground">Data:</span> {new Date(viewDialog.created_at).toLocaleDateString("pt-BR")}</div>
               </div>
               {viewDialog.observacoes && (
