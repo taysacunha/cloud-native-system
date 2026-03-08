@@ -491,7 +491,7 @@ export function BrokerIndividualReport({ teamFilter = "all" }: BrokerIndividualR
     setIsExporting(true);
     try {
       // Wait for React to render PDF-only blocks
-      await new Promise(r => setTimeout(r, 150));
+      await new Promise(r => setTimeout(r, 300));
       const canvas = await html2canvas(reportRef.current, {
         scale: 2,
         useCORS: true,
