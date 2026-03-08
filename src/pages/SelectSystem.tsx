@@ -3,7 +3,7 @@ import { useSystemAccess, SystemName } from "@/hooks/useSystemAccess";
 import { useUserRole } from "@/hooks/useUserRole";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Calendar, TrendingUp, Loader2, LogOut, Crown, Briefcase, User, Users, Palmtree } from "lucide-react";
+import { Calendar, TrendingUp, Loader2, LogOut, Crown, Briefcase, User, Users, Palmtree, Package } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -59,6 +59,13 @@ const systemConfigs: Record<SystemName, { title: string; description: string; ic
     icon: <Palmtree className="h-8 w-8 text-green-600" />,
     color: "bg-card",
     route: "/ferias",
+  },
+  estoque: {
+    title: "Gestão de Estoques",
+    description: "Materiais, solicitações e movimentações",
+    icon: <Package className="h-8 w-8 text-amber-600" />,
+    color: "bg-card",
+    route: "/estoque",
   },
 };
 

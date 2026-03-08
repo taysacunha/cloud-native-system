@@ -1,0 +1,223 @@
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
+import { Plus, Trash2, Loader2, Building2 } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useSystemAccess } from "@/hooks/useSystemAccess";
+
+interface Gestor {
+  id: string;
+  user_id: string;
+  unidade_id: string;
+  nome_gestor: string;
+  created_at: string;
+}
+
+interface Unidade {
+  id: string;
+  nome: string;
+}
+
+const fromEstoque = (table: string) => supabase.from(table as any);
+
+export default function EstoqueGestores() {
+  const queryClient = useQueryClient();
+  const { canEdit } = useSystemAccess();
+  const canEditEstoque = canEdit("estoque");
+
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [form, setForm] = useState({ user_id: "", unidade_id: "", nome_gestor: "" });
+
+  const { data: unidades = [] } = useQuery({
+    queryKey: ["ferias-unidades-estoque"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("ferias_unidades").select("id, nome").eq("is_active", true).order("nome");
+      if (error) throw error;
+      return data as Unidade[];
+    },
+  });
+
+  const { data: gestores = [], isLoading } = useQuery({
+    queryKey: ["estoque-gestores"],
+    queryFn: async () => {
+      const { data, error } = await fromEstoque("estoque_gestores").select("*").order("nome_gestor");
+      if (error) throw error;
+      return (data || []) as unknown as Gestor[];
+    },
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: async (values: typeof form) => {
+      const { error } = await fromEstoque("estoque_gestores").insert({
+        user_id: values.user_id,
+        unidade_id: values.unidade_id,
+        nome_gestor: values.nome_gestor,
+      });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["estoque-gestores"] });
+      toast.success("Gestor cadastrado!");
+      closeDialog();
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await fromEstoque("estoque_gestores").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["estoque-gestores"] });
+      toast.success("Gestor removido!");
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const closeDialog = () => {
+    setDialogOpen(false);
+    setForm({ user_id: "", unidade_id: "", nome_gestor: "" });
+  };
+
+  const handleSubmit = () => {
+    if (!form.nome_gestor.trim()) return toast.error("Nome é obrigatório");
+    if (!form.unidade_id) return toast.error("Selecione a unidade");
+    if (!form.user_id.trim()) return toast.error("ID do usuário é obrigatório");
+    saveMutation.mutate(form);
+  };
+
+  const gestoresByUnidade = unidades
+    .map((u) => ({
+      unidade: u,
+      gestores: gestores.filter((g) => g.unidade_id === u.id),
+    }))
+    .filter((g) => g.gestores.length > 0);
+
+  const unidadesSemGestor = unidades.filter((u) => !gestores.some((g) => g.unidade_id === u.id));
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Gestores de Estoque</h1>
+          <p className="text-muted-foreground">Defina quem gerencia o estoque de cada unidade</p>
+        </div>
+        {canEditEstoque && (
+          <Button onClick={() => setDialogOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" /> Novo Gestor
+          </Button>
+        )}
+      </div>
+
+      {isLoading ? (
+        <div className="flex justify-center py-8">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      ) : (
+        <>
+          {gestoresByUnidade.map(({ unidade, gestores: gs }) => (
+            <Card key={unidade.id}>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Building2 className="h-5 w-5" /> {unidade.nome}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Nome do Gestor</TableHead>
+                      {canEditEstoque && <TableHead className="text-right">Ações</TableHead>}
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {gs.map((g) => (
+                      <TableRow key={g.id}>
+                        <TableCell className="font-medium">{g.nome_gestor}</TableCell>
+                        {canEditEstoque && (
+                          <TableCell className="text-right">
+                            <Button variant="ghost" size="icon" onClick={() => deleteMutation.mutate(g.id)}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        )}
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          ))}
+
+          {unidadesSemGestor.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-muted-foreground">Unidades sem gestor</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-wrap gap-2">
+                  {unidadesSemGestor.map((u) => (
+                    <Badge key={u.id} variant="outline">{u.nome}</Badge>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {gestores.length === 0 && unidadesSemGestor.length === 0 && (
+            <Card>
+              <CardContent className="py-8 text-center text-muted-foreground">
+                Nenhuma unidade cadastrada. Cadastre unidades no módulo de Férias.
+              </CardContent>
+            </Card>
+          )}
+        </>
+      )}
+
+      <Dialog open={dialogOpen} onOpenChange={(open) => { if (!open) closeDialog(); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Novo Gestor de Estoque</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Unidade *</Label>
+              <Select value={form.unidade_id} onValueChange={(v) => setForm({ ...form, unidade_id: v })}>
+                <SelectTrigger><SelectValue placeholder="Selecione a unidade" /></SelectTrigger>
+                <SelectContent>
+                  {unidades.map((u) => (
+                    <SelectItem key={u.id} value={u.id}>{u.nome}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Nome do Gestor *</Label>
+              <Input value={form.nome_gestor} onChange={(e) => setForm({ ...form, nome_gestor: e.target.value })} placeholder="Nome completo do gestor" />
+            </div>
+            <div>
+              <Label>ID do Usuário (auth) *</Label>
+              <Input value={form.user_id} onChange={(e) => setForm({ ...form, user_id: e.target.value })} placeholder="UUID do usuário no sistema" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={closeDialog}>Cancelar</Button>
+            <Button onClick={handleSubmit} disabled={saveMutation.isPending}>
+              {saveMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+              Cadastrar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
