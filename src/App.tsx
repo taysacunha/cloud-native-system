@@ -64,6 +64,7 @@ const EstoqueAuditLogs = lazy(() => import("./pages/estoque/EstoqueAuditLogs"));
 const EstoqueSolicitacoes = lazy(() => import("./pages/estoque/EstoqueSolicitacoes"));
 const EstoqueSaldos = lazy(() => import("./pages/estoque/EstoqueSaldos"));
 const EstoqueMovimentacoes = lazy(() => import("./pages/estoque/EstoqueMovimentacoes"));
+const EstoqueNotificacoes = lazy(() => import("./pages/estoque/EstoqueNotificacoes"));
 
 const queryClient = new QueryClient({
   defaultOptions: {
