@@ -1,57 +1,155 @@
 
 
-## Plano - 4 Correções
+## Plano: Modulo de Gestao de Estoques (4 Fases) - Ajustado
 
-### 1. Dialog de corretores quebrado (sem scroll)
+### Ajustes aplicados
 
-**Problema:** O `DialogContent` em `SalesBrokers.tsx` (linha 473) não tem limite de altura. Com os novos campos CRECI e Nome de Exibição, o conteúdo ultrapassa a viewport e os botões Cancelar/Salvar ficam inacessíveis.
-
-**Solução:** Adicionar `className="max-w-lg max-h-[90vh] overflow-y-auto"` ao `DialogContent` (linha 473). O `DialogFooter` (linha 638) receberá `className="sticky bottom-0 bg-background pt-4 border-t"` para ficar sempre visível.
-
-**Arquivo:** `src/pages/vendas/SalesBrokers.tsx` (linhas 473, 638)
+1. **Solicitantes**: qualquer usuario com acesso ao sistema `estoque` (view_only ou view_edit) pode solicitar materiais. Nao depende de ser "chefe" cadastrado no modulo de ferias.
+2. **Sem PDF de protocolo**: removido. Substituido por historico completo de movimentacoes/recebimentos consultavel por nome, material, unidade, data.
+3. **Pagina de auditoria**: adicionada, seguindo o mesmo padrao de Escalas e Vendas (`AuditLogsPanel` com `defaultModule="estoque"`).
 
 ---
 
-### 2. Relatório Corretores Vendas - dados de meses sem cadastro
+### Estrutura do banco (tabelas novas)
 
-**Problema:** No modo mensal, o `months` (linha 200-224) inclui o mês anterior para "contexto de evolução". Os totais (linhas 400-409) e queries de `saleDetails`, `proposalsData`, `leadsData`, `evaluationsData` usam esse array completo, então dados do mês anterior "vazam" para o mês selecionado.
+```text
+estoque_locais_armazenamento
+  id, unidade_id (-> ferias_unidades), nome, tipo (deposito/armario/prateleira),
+  parent_id (-> self), is_active, created_at, updated_at
 
-**Solução:** Criar um `reportMonths` separado que contém apenas o mês selecionado (sem o anterior). Usar `reportMonths` para calcular totais e buscar `saleDetails`. Manter `months` completo apenas para os gráficos de evolução (`salesData`, `proposalsData`, `leadsData`, `evaluationsData` nos charts).
+estoque_materiais
+  id, nome, descricao, unidade_medida, categoria,
+  estoque_minimo, is_active, created_at, updated_at
 
-Concretamente:
-- Adicionar `const reportMonths = periodType === "month" ? [months[months.length - 1]] : months;`
-- Alterar `totalVGV`, `totalSales` para somar apenas entries cujo `month` esteja em `reportMonths`
-- Alterar `totalProposals`, `totalConverted`, `totalLeads`, `totalLeadsActive`, `totalVisits`, `avgScore` idem
-- Alterar query de `saleDetails` para usar `reportMonths` no `.in("year_month", ...)`
+estoque_saldos
+  id, material_id, local_armazenamento_id, quantidade, updated_at
+  UNIQUE(material_id, local_armazenamento_id)
 
-**Arquivo:** `src/components/vendas/BrokerIndividualReport.tsx` (linhas ~200, 384-409)
+estoque_gestores
+  id, user_id (-> auth.users), unidade_id (-> ferias_unidades),
+  nome_gestor, created_at
+
+estoque_solicitacoes
+  id, solicitante_user_id (-> auth.users), solicitante_nome,
+  unidade_id, status (pendente/aprovada/separada/entregue/cancelada),
+  observacoes, created_at, updated_at
+
+estoque_solicitacao_itens
+  id, solicitacao_id, material_id, quantidade_solicitada,
+  quantidade_atendida, local_armazenamento_id
+
+estoque_movimentacoes
+  id, material_id, tipo (entrada/saida/transferencia/ajuste),
+  quantidade, local_origem_id, local_destino_id,
+  solicitacao_id (nullable), responsavel_user_id,
+  recebido_por_user_id, recebido_em (timestamp),
+  observacoes, created_at
+
+estoque_notificacoes
+  id, user_id, tipo, referencia_id, referencia_tipo,
+  mensagem, lida, created_at
+```
+
+Trigger `audit_module_changes` sera estendido para incluir tabelas `estoque_*` com `module_name = 'estoque'`.
 
 ---
 
-### 3. Divs de vendas/avaliação não aparecem no PDF
+### Paginas do modulo
 
-**Problema:** `hidden print:block` (linhas 713, 753) funciona com `window.print()` mas **não** com `html2canvas`, que captura o estado visual atual do DOM. Os elementos ficam `display:none` durante a captura.
-
-**Solução:** Usar o estado `isExporting` (já existe, linha 192) para controlar visibilidade:
-- Trocar `className="hidden print:block"` por renderização condicional: `{isExporting && saleDetails.length > 0 && (<Card>...</Card>)}`
-- No `handleExportPDF` (linha 428), o `setIsExporting(true)` já é chamado antes do `html2canvas`. Adicionar um `await new Promise(r => setTimeout(r, 100))` entre o `setIsExporting(true)` e o `html2canvas` para dar tempo ao React de renderizar os blocos.
-
-**Arquivo:** `src/components/vendas/BrokerIndividualReport.tsx` (linhas 711-755, 434-436)
-
----
-
-### 4. Ajuste de qualidade - acessibilidade do dialog
-
-**Identificado:** O `DialogContent` de corretores já tem `DialogDescription`, então está ok. Verificar se outros dialogs do mesmo arquivo têm `DialogDescription` para evitar warnings no console.
-
-**Arquivo:** `src/pages/vendas/SalesBrokers.tsx`
+| Rota | Pagina |
+|------|--------|
+| `/estoque` | Dashboard |
+| `/estoque/materiais` | CRUD materiais |
+| `/estoque/locais` | Arvore de locais por unidade |
+| `/estoque/saldos` | Consulta de saldos |
+| `/estoque/solicitacoes` | Solicitacoes (criar/gerenciar) |
+| `/estoque/movimentacoes` | Historico completo (busca por nome, material, unidade, data) |
+| `/estoque/notificacoes` | Central de notificacoes |
+| `/estoque/gestores` | Gestores por unidade |
+| `/estoque/auditoria` | Auditoria (AuditLogsPanel module=estoque) |
+| `/estoque/perfil` | Perfil |
+| `/estoque/usuarios` | Gerenciamento de usuarios (admin) |
 
 ---
 
-### Resumo
+### Fluxo de solicitacao e historico
 
-| Arquivo | Alteração |
-|---------|-----------|
-| `SalesBrokers.tsx` | Scroll + footer sticky no dialog |
-| `BrokerIndividualReport.tsx` | `reportMonths` para totais, renderização condicional por `isExporting` |
+```text
+USUARIO (com acesso)         GESTOR (da unidade)
+      |                           |
+  1. Cria solicitacao -----> 2. Notificacao
+      |                     3. Separa / Entrega
+      |                     4. Registra movimentacao
+      |                        (saida do estoque)
+  5. Recebe notificacao      |
+  6. Confirma recebimento    |
+      |                     7. Movimentacao atualizada
+      |                        com recebido_por + timestamp
+```
+
+Todo esse fluxo fica registrado em `estoque_movimentacoes` e consultavel na pagina de Movimentacoes com filtros por:
+- Nome do solicitante / recebedor
+- Material
+- Unidade
+- Tipo de movimentacao
+- Periodo
+
+---
+
+### Fase 1 (Base)
+
+**Banco**: Criar todas as 8 tabelas, RLS policies, triggers de audit e updated_at. Adicionar `'estoque'` ao `system_access`. Estender `audit_module_changes` para tabelas estoque.
+
+**Frontend**: 
+- `EstoqueLayout`, `EstoqueSidebar` (mesmo padrao de FeriasLayout/VendasLayout)
+- Rotas em `App.tsx`
+- `SystemName` type atualizado para incluir `"estoque"`
+- `SelectSystem` com card do estoque
+- CRUD de materiais (`/estoque/materiais`)
+- CRUD de locais de armazenamento (`/estoque/locais`) com arvore hierarquica
+- Pagina de gestores por unidade (`/estoque/gestores`)
+
+**Arquivos novos**: ~10 (layout, sidebar, 3 paginas, migrations)
+**Arquivos editados**: `useSystemAccess.ts`, `App.tsx`, `SelectSystem.tsx`, `AuditLogsPanel.tsx`
+
+---
+
+### Fase 2 (Operacional)
+
+- Pagina de solicitacoes: criar, aprovar, separar, entregar, cancelar
+- Gestao de saldos: entrada manual, ajuste
+- Transferencias entre locais/unidades com registro automatico em movimentacoes
+- Confirmacao de recebimento pelo usuario
+- Alertas visuais de estoque baixo na pagina de saldos
+
+**Arquivos novos**: ~5 (paginas + componentes de dialog)
+
+---
+
+### Fase 3 (Comunicacao)
+
+- Notificacoes in-app (badge no sidebar + pagina de notificacoes)
+- Notificacao automatica ao gestor quando nova solicitacao
+- Notificacao ao solicitante quando material separado/entregue
+- Alerta de estoque baixo como notificacao ao gestor
+
+**Arquivos novos**: ~3 (pagina notificacoes, hook, componente badge)
+
+---
+
+### Fase 4 (Historico e Relatorios)
+
+- Pagina de movimentacoes com filtros avancados (nome, material, unidade, tipo, periodo)
+- Pagina de auditoria (`AuditLogsPanel` com module=estoque)
+- Dashboard com resumos (solicitacoes pendentes, alertas de estoque baixo, ultimas movimentacoes)
+- Exportacao de relatorios
+
+**Arquivos novos**: ~3 (paginas)
+**Arquivos editados**: `AuditLogsPanel.tsx` (adicionar labels estoque)
+
+---
+
+### Reaproveitamento de estrutura organizacional
+
+O modulo usa diretamente `ferias_unidades` e `ferias_setores` (somente leitura). Qualquer alteracao na estrutura organizacional no modulo de ferias reflete automaticamente no estoque. Nenhuma duplicidade de dados.
 
