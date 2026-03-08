@@ -1,52 +1,57 @@
 
 
-## Plano: Redesign Locais de Armazenamento + Controles de Tabela em Todo o Módulo Estoque
+## Plano - 4 Correções
 
-### 1. Simplificar Locais de Armazenamento (`EstoqueLocais.tsx`)
+### 1. Dialog de corretores quebrado (sem scroll)
 
-**Problema atual:** Campo "Local Pai" confuso, sem validação de duplicidade, sem confirmação ao desativar.
+**Problema:** O `DialogContent` em `SalesBrokers.tsx` (linha 473) não tem limite de altura. Com os novos campos CRECI e Nome de Exibição, o conteúdo ultrapassa a viewport e os botões Cancelar/Salvar ficam inacessíveis.
 
-**Solução:**
-- **Remover hierarquia** — eliminar `buildTree`, `LocalNode`, campo "Local Pai" do dialog. Sempre salvar `parent_id = null`
-- **Substituir por tabela simples** por unidade: Nome | Tipo | Status | Ações
-- **Validação de duplicidade** — antes de salvar, verificar se já existe local ativo com mesmo nome (case-insensitive) na mesma unidade. Se sim, toast de erro: "Já existe um local com este nome nesta unidade"
-- **AlertDialog de confirmação** ao desativar/excluir
+**Solução:** Adicionar `className="max-w-lg max-h-[90vh] overflow-y-auto"` ao `DialogContent` (linha 473). O `DialogFooter` (linha 638) receberá `className="sticky bottom-0 bg-background pt-4 border-t"` para ficar sempre visível.
 
-### 2. Adicionar ordenação, busca, paginação em todas as páginas de listagem do Estoque
+**Arquivo:** `src/pages/vendas/SalesBrokers.tsx` (linhas 473, 638)
 
-Páginas que receberão os controles usando o hook `useTableControls` e componentes `TableSearch`, `TablePagination`, `SortableHeader` (já existentes em `src/hooks/useTableControls.ts` e `src/components/vendas/TableControls.tsx`):
+---
 
-| Página | Arquivo | Estado atual |
-|--------|---------|-------------|
-| Materiais | `EstoqueMateriais.tsx` | Busca simples, sem paginação/ordenação |
-| Locais | `EstoqueLocais.tsx` | Sem controles |
-| Saldos | `EstoqueSaldos.tsx` | Busca simples, sem paginação/ordenação |
-| Movimentações | `EstoqueMovimentacoes.tsx` | Busca + filtro tipo, sem paginação/ordenação |
-| Solicitações | `EstoqueSolicitacoes.tsx` | Busca + filtro status, sem paginação/ordenação |
-| Notificações | `EstoqueNotificacoes.tsx` | Sem controles |
-| Gestores | `EstoqueGestores.tsx` | Sem controles |
+### 2. Relatório Corretores Vendas - dados de meses sem cadastro
 
-**Para cada página:**
-- Substituir busca manual por `useTableControls` com `defaultItemsPerPage = 25`
-- Adicionar `TableSearch` no topo
-- Adicionar `SortableHeader` nas colunas relevantes (nome, data, tipo, quantidade etc.)
-- Adicionar `TablePagination` no rodapé com opções 25, 50, 100 itens por página
-- Mover `TableControls.tsx` de `vendas/` para `components/` (uso compartilhado) ou importar direto de `vendas/`
+**Problema:** No modo mensal, o `months` (linha 200-224) inclui o mês anterior para "contexto de evolução". Os totais (linhas 400-409) e queries de `saleDetails`, `proposalsData`, `leadsData`, `evaluationsData` usam esse array completo, então dados do mês anterior "vazam" para o mês selecionado.
 
-### 3. Ajustar opções de itens por página
+**Solução:** Criar um `reportMonths` separado que contém apenas o mês selecionado (sem o anterior). Usar `reportMonths` para calcular totais e buscar `saleDetails`. Manter `months` completo apenas para os gráficos de evolução (`salesData`, `proposalsData`, `leadsData`, `evaluationsData` nos charts).
 
-O `TablePagination` atual oferece 20/50/100. Será atualizado para **25/50/100** conforme solicitado, alterando os `<SelectItem>` no componente.
+Concretamente:
+- Adicionar `const reportMonths = periodType === "month" ? [months[months.length - 1]] : months;`
+- Alterar `totalVGV`, `totalSales` para somar apenas entries cujo `month` esteja em `reportMonths`
+- Alterar `totalProposals`, `totalConverted`, `totalLeads`, `totalLeadsActive`, `totalVisits`, `avgScore` idem
+- Alterar query de `saleDetails` para usar `reportMonths` no `.in("year_month", ...)`
 
-### Arquivos a alterar
+**Arquivo:** `src/components/vendas/BrokerIndividualReport.tsx` (linhas ~200, 384-409)
+
+---
+
+### 3. Divs de vendas/avaliação não aparecem no PDF
+
+**Problema:** `hidden print:block` (linhas 713, 753) funciona com `window.print()` mas **não** com `html2canvas`, que captura o estado visual atual do DOM. Os elementos ficam `display:none` durante a captura.
+
+**Solução:** Usar o estado `isExporting` (já existe, linha 192) para controlar visibilidade:
+- Trocar `className="hidden print:block"` por renderização condicional: `{isExporting && saleDetails.length > 0 && (<Card>...</Card>)}`
+- No `handleExportPDF` (linha 428), o `setIsExporting(true)` já é chamado antes do `html2canvas`. Adicionar um `await new Promise(r => setTimeout(r, 100))` entre o `setIsExporting(true)` e o `html2canvas` para dar tempo ao React de renderizar os blocos.
+
+**Arquivo:** `src/components/vendas/BrokerIndividualReport.tsx` (linhas 711-755, 434-436)
+
+---
+
+### 4. Ajuste de qualidade - acessibilidade do dialog
+
+**Identificado:** O `DialogContent` de corretores já tem `DialogDescription`, então está ok. Verificar se outros dialogs do mesmo arquivo têm `DialogDescription` para evitar warnings no console.
+
+**Arquivo:** `src/pages/vendas/SalesBrokers.tsx`
+
+---
+
+### Resumo
 
 | Arquivo | Alteração |
 |---------|-----------|
-| `EstoqueLocais.tsx` | Reescrita: tabela flat, validação duplicidade, AlertDialog, useTableControls |
-| `EstoqueMateriais.tsx` | Adicionar useTableControls + paginação + ordenação |
-| `EstoqueSaldos.tsx` | Adicionar useTableControls + paginação + ordenação |
-| `EstoqueMovimentacoes.tsx` | Adicionar useTableControls + paginação + ordenação |
-| `EstoqueSolicitacoes.tsx` | Adicionar useTableControls + paginação + ordenação |
-| `EstoqueNotificacoes.tsx` | Adicionar useTableControls + paginação + ordenação |
-| `EstoqueGestores.tsx` | Adicionar useTableControls + paginação + ordenação |
-| `TableControls.tsx` | Alterar opções para 25/50/100 |
+| `SalesBrokers.tsx` | Scroll + footer sticky no dialog |
+| `BrokerIndividualReport.tsx` | `reportMonths` para totais, renderização condicional por `isExporting` |
 

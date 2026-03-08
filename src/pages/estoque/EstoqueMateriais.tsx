@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, Package, Loader2 } from "lucide-react";
+import { Plus, Pencil, Package, Loader2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,7 +12,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { useSystemAccess } from "@/hooks/useSystemAccess";
+import { useTableControls } from "@/hooks/useTableControls";
+import { TableSearch, TablePagination, SortableHeader } from "@/components/vendas/TableControls";
 
 interface Material {
   id: string;
@@ -36,7 +39,6 @@ const UNIDADES_MEDIDA = [
   { value: "rs", label: "Resma" },
 ];
 
-// Helper to bypass Supabase typed client for tables not yet in types.ts
 const fromEstoque = (table: string) => supabase.from(table as any);
 
 export default function EstoqueMateriais() {
@@ -46,7 +48,7 @@ export default function EstoqueMateriais() {
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingMaterial, setEditingMaterial] = useState<Material | null>(null);
-  const [search, setSearch] = useState("");
+  const [toggleConfirm, setToggleConfirm] = useState<{ id: string; nome: string; newActive: boolean } | null>(null);
   const [form, setForm] = useState({
     nome: "",
     descricao: "",
@@ -58,12 +60,20 @@ export default function EstoqueMateriais() {
   const { data: materiais = [], isLoading } = useQuery({
     queryKey: ["estoque-materiais"],
     queryFn: async () => {
-      const { data, error } = await fromEstoque("estoque_materiais")
-        .select("*")
-        .order("nome");
+      const { data, error } = await fromEstoque("estoque_materiais").select("*").order("nome");
       if (error) throw error;
       return (data || []) as unknown as Material[];
     },
+  });
+
+  const {
+    searchTerm, setSearchTerm, currentPage, setCurrentPage,
+    itemsPerPage, setItemsPerPage, sortField, sortDirection, setSorting,
+    paginatedData, filteredData, totalPages,
+  } = useTableControls({
+    data: materiais,
+    searchField: ["nome", "categoria"],
+    defaultItemsPerPage: 25,
   });
 
   const saveMutation = useMutation({
@@ -99,6 +109,7 @@ export default function EstoqueMateriais() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["estoque-materiais"] });
       toast.success("Status alterado!");
+      setToggleConfirm(null);
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -126,12 +137,6 @@ export default function EstoqueMateriais() {
     saveMutation.mutate({ ...form, id: editingMaterial?.id });
   };
 
-  const filtered = materiais.filter(
-    (m) =>
-      m.nome.toLowerCase().includes(search.toLowerCase()) ||
-      (m.categoria || "").toLowerCase().includes(search.toLowerCase())
-  );
-
   const unidadeLabel = (val: string) => UNIDADES_MEDIDA.find((u) => u.value === val)?.label || val;
 
   return (
@@ -154,12 +159,7 @@ export default function EstoqueMateriais() {
             <CardTitle className="flex items-center gap-2">
               <Package className="h-5 w-5" /> Materiais Cadastrados
             </CardTitle>
-            <Input
-              placeholder="Buscar por nome ou categoria..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="max-w-xs"
-            />
+            <TableSearch value={searchTerm} onChange={setSearchTerm} placeholder="Buscar por nome ou categoria..." />
           </div>
         </CardHeader>
         <CardContent>
@@ -167,54 +167,71 @@ export default function EstoqueMateriais() {
             <div className="flex justify-center py-8">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
-          ) : filtered.length === 0 ? (
+          ) : paginatedData.length === 0 ? (
             <p className="text-center text-muted-foreground py-8">Nenhum material encontrado</p>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Nome</TableHead>
-                  <TableHead>Categoria</TableHead>
-                  <TableHead>Unidade</TableHead>
-                  <TableHead className="text-center">Estoque Mín.</TableHead>
-                  <TableHead className="text-center">Status</TableHead>
-                  {canEditEstoque && <TableHead className="text-right">Ações</TableHead>}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filtered.map((m) => (
-                  <TableRow key={m.id}>
-                    <TableCell className="font-medium">{m.nome}</TableCell>
-                    <TableCell>{m.categoria || "—"}</TableCell>
-                    <TableCell>{unidadeLabel(m.unidade_medida)}</TableCell>
-                    <TableCell className="text-center">{m.estoque_minimo}</TableCell>
-                    <TableCell className="text-center">
-                      <Badge variant={m.is_active ? "default" : "secondary"}>
-                        {m.is_active ? "Ativo" : "Inativo"}
-                      </Badge>
-                    </TableCell>
-                    {canEditEstoque && (
-                      <TableCell className="text-right space-x-2">
-                        <Button variant="ghost" size="icon" onClick={() => openEdit(m)}>
-                          <Pencil className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => toggleMutation.mutate({ id: m.id, is_active: !m.is_active })}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </TableCell>
-                    )}
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>
+                      <SortableHeader label="Nome" field="nome" currentField={sortField as string} direction={sortDirection} onSort={setSorting as any} />
+                    </TableHead>
+                    <TableHead>
+                      <SortableHeader label="Categoria" field="categoria" currentField={sortField as string} direction={sortDirection} onSort={setSorting as any} />
+                    </TableHead>
+                    <TableHead>Unidade</TableHead>
+                    <TableHead className="text-center">
+                      <SortableHeader label="Estoque Mín." field="estoque_minimo" currentField={sortField as string} direction={sortDirection} onSort={setSorting as any} />
+                    </TableHead>
+                    <TableHead className="text-center">Status</TableHead>
+                    {canEditEstoque && <TableHead className="text-right">Ações</TableHead>}
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {paginatedData.map((m) => (
+                    <TableRow key={m.id}>
+                      <TableCell className="font-medium">{m.nome}</TableCell>
+                      <TableCell>{m.categoria || "—"}</TableCell>
+                      <TableCell>{unidadeLabel(m.unidade_medida)}</TableCell>
+                      <TableCell className="text-center">{m.estoque_minimo}</TableCell>
+                      <TableCell className="text-center">
+                        <Badge variant={m.is_active ? "default" : "secondary"}>
+                          {m.is_active ? "Ativo" : "Inativo"}
+                        </Badge>
+                      </TableCell>
+                      {canEditEstoque && (
+                        <TableCell className="text-right space-x-2">
+                          <Button variant="ghost" size="icon" onClick={() => openEdit(m)}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => setToggleConfirm({ id: m.id, nome: m.nome, newActive: !m.is_active })}
+                          >
+                            <span className="text-xs">{m.is_active ? "⏸" : "▶"}</span>
+                          </Button>
+                        </TableCell>
+                      )}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              <TablePagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                itemsPerPage={itemsPerPage}
+                onPageChange={setCurrentPage}
+                onItemsPerPageChange={setItemsPerPage}
+                totalItems={filteredData.length}
+              />
+            </>
           )}
         </CardContent>
       </Card>
 
+      {/* Dialog */}
       <Dialog open={dialogOpen} onOpenChange={(open) => { if (!open) closeDialog(); }}>
         <DialogContent>
           <DialogHeader>
@@ -265,6 +282,24 @@ export default function EstoqueMateriais() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Confirmação */}
+      <AlertDialog open={!!toggleConfirm} onOpenChange={(open) => { if (!open) setToggleConfirm(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar {toggleConfirm?.newActive ? "ativação" : "desativação"}</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja {toggleConfirm?.newActive ? "ativar" : "desativar"} o material <strong>{toggleConfirm?.nome}</strong>?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={() => toggleConfirm && toggleMutation.mutate({ id: toggleConfirm.id, is_active: toggleConfirm.newActive })}>
+              {toggleConfirm?.newActive ? "Ativar" : "Desativar"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

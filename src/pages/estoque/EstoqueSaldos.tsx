@@ -13,6 +13,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { useSystemAccess } from "@/hooks/useSystemAccess";
+import { useTableControls } from "@/hooks/useTableControls";
+import { TableSearch, TablePagination, SortableHeader } from "@/components/vendas/TableControls";
 
 const fromEstoque = (table: string) => supabase.from(table as any);
 
@@ -50,7 +52,6 @@ export default function EstoqueSaldos() {
   const [entradaDialog, setEntradaDialog] = useState(false);
   const [ajusteDialog, setAjusteDialog] = useState(false);
   const [transferenciaDialog, setTransferenciaDialog] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
 
   // Form state
   const [materialId, setMaterialId] = useState("");
@@ -227,14 +228,14 @@ export default function EstoqueSaldos() {
     setObservacoes("");
   };
 
-  const filtered = saldos.filter((s) => {
-    if (!searchTerm) return true;
-    const term = searchTerm.toLowerCase();
-    return (
-      s.material_nome?.toLowerCase().includes(term) ||
-      s.local_nome?.toLowerCase().includes(term) ||
-      s.unidade_nome?.toLowerCase().includes(term)
-    );
+  const {
+    searchTerm, setSearchTerm, currentPage, setCurrentPage,
+    itemsPerPage, setItemsPerPage, sortField, sortDirection, setSorting,
+    paginatedData, filteredData, totalPages,
+  } = useTableControls({
+    data: saldos,
+    searchField: ["material_nome", "local_nome", "unidade_nome"],
+    defaultItemsPerPage: 25,
   });
 
   const lowStockCount = saldos.filter((s) => s.quantidade <= (s.material_estoque_minimo || 0) && s.material_estoque_minimo! > 0).length;
@@ -276,12 +277,7 @@ export default function EstoqueSaldos() {
       {/* Search */}
       <Card>
         <CardContent className="pt-4">
-          <Input
-            placeholder="Buscar por material, local ou unidade..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="max-w-sm"
-          />
+          <TableSearch value={searchTerm} onChange={setSearchTerm} placeholder="Buscar por material, local ou unidade..." />
         </CardContent>
       </Card>
 
@@ -292,47 +288,67 @@ export default function EstoqueSaldos() {
             <div className="flex items-center justify-center p-12">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
             </div>
-          ) : filtered.length === 0 ? (
+          ) : paginatedData.length === 0 ? (
             <div className="flex flex-col items-center justify-center p-12 text-muted-foreground">
               <PackageOpen className="h-12 w-12 mb-4 opacity-50" />
               <p>Nenhum saldo cadastrado</p>
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Material</TableHead>
-                  <TableHead>Local</TableHead>
-                  <TableHead>Unidade</TableHead>
-                  <TableHead className="text-right">Quantidade</TableHead>
-                  <TableHead className="text-right">Mínimo</TableHead>
-                  <TableHead>Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filtered.map((s) => {
-                  const isLow = s.quantidade <= (s.material_estoque_minimo || 0) && (s.material_estoque_minimo || 0) > 0;
-                  return (
-                    <TableRow key={s.id} className={isLow ? "bg-yellow-500/5" : ""}>
-                      <TableCell className="font-medium">{s.material_nome}</TableCell>
-                      <TableCell>{s.local_nome}</TableCell>
-                      <TableCell>{s.unidade_nome}</TableCell>
-                      <TableCell className="text-right font-mono">{s.quantidade} {s.material_unidade}</TableCell>
-                      <TableCell className="text-right font-mono text-muted-foreground">{s.material_estoque_minimo}</TableCell>
-                      <TableCell>
-                        {isLow ? (
-                          <Badge variant="outline" className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30">
-                            <AlertTriangle className="h-3 w-3 mr-1" /> Baixo
-                          </Badge>
-                        ) : (
-                          <Badge variant="outline" className="bg-green-500/20 text-green-400 border-green-500/30">OK</Badge>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>
+                      <SortableHeader label="Material" field="material_nome" currentField={sortField as string} direction={sortDirection} onSort={setSorting as any} />
+                    </TableHead>
+                    <TableHead>
+                      <SortableHeader label="Local" field="local_nome" currentField={sortField as string} direction={sortDirection} onSort={setSorting as any} />
+                    </TableHead>
+                    <TableHead>
+                      <SortableHeader label="Unidade" field="unidade_nome" currentField={sortField as string} direction={sortDirection} onSort={setSorting as any} />
+                    </TableHead>
+                    <TableHead className="text-right">
+                      <SortableHeader label="Quantidade" field="quantidade" currentField={sortField as string} direction={sortDirection} onSort={setSorting as any} />
+                    </TableHead>
+                    <TableHead className="text-right">Mínimo</TableHead>
+                    <TableHead>Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {paginatedData.map((s) => {
+                    const isLow = s.quantidade <= (s.material_estoque_minimo || 0) && (s.material_estoque_minimo || 0) > 0;
+                    return (
+                      <TableRow key={s.id} className={isLow ? "bg-yellow-500/5" : ""}>
+                        <TableCell className="font-medium">{s.material_nome}</TableCell>
+                        <TableCell>{s.local_nome}</TableCell>
+                        <TableCell>{s.unidade_nome}</TableCell>
+                        <TableCell className="text-right font-mono">{s.quantidade} {s.material_unidade}</TableCell>
+                        <TableCell className="text-right font-mono text-muted-foreground">{s.material_estoque_minimo}</TableCell>
+                        <TableCell>
+                          {isLow ? (
+                            <Badge variant="outline" className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30">
+                              <AlertTriangle className="h-3 w-3 mr-1" /> Baixo
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="bg-green-500/20 text-green-400 border-green-500/30">OK</Badge>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+              <div className="p-4">
+                <TablePagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  itemsPerPage={itemsPerPage}
+                  onPageChange={setCurrentPage}
+                  onItemsPerPageChange={setItemsPerPage}
+                  totalItems={filteredData.length}
+                />
+              </div>
+            </>
           )}
         </CardContent>
       </Card>

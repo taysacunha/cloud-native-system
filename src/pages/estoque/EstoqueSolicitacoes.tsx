@@ -3,17 +3,19 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Plus, ClipboardList, Loader2, CheckCircle, Package, Truck, X, Eye } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { useSystemAccess } from "@/hooks/useSystemAccess";
 import { notificarGestoresUnidade, criarNotificacao } from "@/hooks/useEstoqueNotificacoes";
+import { useTableControls } from "@/hooks/useTableControls";
+import { TableSearch, TablePagination, SortableHeader } from "@/components/vendas/TableControls";
 
 const fromEstoque = (table: string) => supabase.from(table as any);
 
@@ -85,7 +87,6 @@ export default function EstoqueSolicitacoes() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [viewDialog, setViewDialog] = useState<Solicitacao | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>("all");
-  const [searchTerm, setSearchTerm] = useState("");
 
   // Form state
   const [unidadeId, setUnidadeId] = useState("");
@@ -239,10 +240,16 @@ export default function EstoqueSolicitacoes() {
     setItens(updated);
   };
 
-  const filtered = solicitacoes.filter((s) => {
-    if (filterStatus !== "all" && s.status !== filterStatus) return false;
-    if (searchTerm && !s.solicitante_nome.toLowerCase().includes(searchTerm.toLowerCase())) return false;
-    return true;
+  const filteredByStatus = solicitacoes.filter((s) => filterStatus === "all" || s.status === filterStatus);
+
+  const {
+    searchTerm, setSearchTerm, currentPage, setCurrentPage,
+    itemsPerPage, setItemsPerPage, sortField, sortDirection, setSorting,
+    paginatedData, filteredData, totalPages,
+  } = useTableControls({
+    data: filteredByStatus,
+    searchField: "solicitante_nome",
+    defaultItemsPerPage: 25,
   });
 
   const getUnidadeNome = (id: string | null) => unidades.find((u) => u.id === id)?.nome || "—";
@@ -263,12 +270,7 @@ export default function EstoqueSolicitacoes() {
       <Card>
         <CardContent className="pt-4">
           <div className="flex flex-col sm:flex-row gap-3">
-            <Input
-              placeholder="Buscar por solicitante..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="sm:max-w-xs"
-            />
+            <TableSearch value={searchTerm} onChange={setSearchTerm} placeholder="Buscar por solicitante..." />
             <Select value={filterStatus} onValueChange={setFilterStatus}>
               <SelectTrigger className="sm:max-w-[180px]">
                 <SelectValue />
@@ -291,59 +293,75 @@ export default function EstoqueSolicitacoes() {
             <div className="flex items-center justify-center p-12">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
             </div>
-          ) : filtered.length === 0 ? (
+          ) : paginatedData.length === 0 ? (
             <div className="flex flex-col items-center justify-center p-12 text-muted-foreground">
               <ClipboardList className="h-12 w-12 mb-4 opacity-50" />
               <p>Nenhuma solicitação encontrada</p>
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Solicitante</TableHead>
-                  <TableHead>Unidade</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Data</TableHead>
-                  <TableHead className="text-right">Ações</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filtered.map((sol) => (
-                  <TableRow key={sol.id}>
-                    <TableCell className="font-medium">{sol.solicitante_nome}</TableCell>
-                    <TableCell>{getUnidadeNome(sol.unidade_id)}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={STATUS_COLORS[sol.status] || ""}>
-                        {STATUS_LABELS[sol.status] || sol.status}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>{new Date(sol.created_at).toLocaleDateString("pt-BR")}</TableCell>
-                    <TableCell className="text-right space-x-1">
-                      <Button size="sm" variant="ghost" onClick={() => setViewDialog(sol)}>
-                        <Eye className="h-4 w-4" />
-                      </Button>
-                      {canEditEstoque && NEXT_STATUS[sol.status] && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => updateStatusMutation.mutate({ id: sol.id, newStatus: NEXT_STATUS[sol.status], solicitacao: sol })}
-                        >
-                          {sol.status === "pendente" && <CheckCircle className="h-4 w-4 mr-1" />}
-                          {sol.status === "aprovada" && <Package className="h-4 w-4 mr-1" />}
-                          {sol.status === "separada" && <Truck className="h-4 w-4 mr-1" />}
-                          {NEXT_STATUS_LABEL[sol.status]}
-                        </Button>
-                      )}
-                      {sol.status !== "cancelada" && sol.status !== "entregue" && (
-                        <Button size="sm" variant="ghost" className="text-destructive" onClick={() => cancelMutation.mutate(sol.id)}>
-                          <X className="h-4 w-4" />
-                        </Button>
-                      )}
-                    </TableCell>
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>
+                      <SortableHeader label="Solicitante" field="solicitante_nome" currentField={sortField as string} direction={sortDirection} onSort={setSorting as any} />
+                    </TableHead>
+                    <TableHead>Unidade</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>
+                      <SortableHeader label="Data" field="created_at" currentField={sortField as string} direction={sortDirection} onSort={setSorting as any} />
+                    </TableHead>
+                    <TableHead className="text-right">Ações</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {paginatedData.map((sol) => (
+                    <TableRow key={sol.id}>
+                      <TableCell className="font-medium">{sol.solicitante_nome}</TableCell>
+                      <TableCell>{getUnidadeNome(sol.unidade_id)}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className={STATUS_COLORS[sol.status] || ""}>
+                          {STATUS_LABELS[sol.status] || sol.status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{new Date(sol.created_at).toLocaleDateString("pt-BR")}</TableCell>
+                      <TableCell className="text-right space-x-1">
+                        <Button size="sm" variant="ghost" onClick={() => setViewDialog(sol)}>
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                        {canEditEstoque && NEXT_STATUS[sol.status] && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => updateStatusMutation.mutate({ id: sol.id, newStatus: NEXT_STATUS[sol.status], solicitacao: sol })}
+                          >
+                            {sol.status === "pendente" && <CheckCircle className="h-4 w-4 mr-1" />}
+                            {sol.status === "aprovada" && <Package className="h-4 w-4 mr-1" />}
+                            {sol.status === "separada" && <Truck className="h-4 w-4 mr-1" />}
+                            {NEXT_STATUS_LABEL[sol.status]}
+                          </Button>
+                        )}
+                        {sol.status !== "cancelada" && sol.status !== "entregue" && (
+                          <Button size="sm" variant="ghost" className="text-destructive" onClick={() => cancelMutation.mutate(sol.id)}>
+                            <X className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              <div className="p-4">
+                <TablePagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  itemsPerPage={itemsPerPage}
+                  onPageChange={setCurrentPage}
+                  onItemsPerPageChange={setItemsPerPage}
+                  totalItems={filteredData.length}
+                />
+              </div>
+            </>
           )}
         </CardContent>
       </Card>
