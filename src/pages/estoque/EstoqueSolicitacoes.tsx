@@ -102,6 +102,12 @@ export default function EstoqueSolicitacoes() {
     }
   }, [unidadesPermitidas, unidadeId]);
 
+  // Clear items when unit changes
+  const handleUnidadeChange = (newUnidadeId: string) => {
+    setUnidadeId(newUnidadeId);
+    setItens([{ material_id: "", quantidade: 1 }]);
+  };
+
   const { data: solicitacoes = [], isLoading } = useQuery({
     queryKey: ["estoque-solicitacoes"],
     queryFn: async () => {
