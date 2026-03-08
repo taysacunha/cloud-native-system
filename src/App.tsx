@@ -181,6 +181,9 @@ const App = () => {
               <Route index element={<EstoqueDashboard />} />
               <Route path="materiais" element={<EstoqueMateriais />} />
               <Route path="locais" element={<EstoqueLocais />} />
+              <Route path="saldos" element={<EstoqueSaldos />} />
+              <Route path="solicitacoes" element={<EstoqueSolicitacoes />} />
+              <Route path="movimentacoes" element={<EstoqueMovimentacoes />} />
               <Route path="gestores" element={<EstoqueGestores />} />
               <Route path="perfil" element={<Profile />} />
               <Route path="usuarios" element={<RoleGuard allowedRoles={["super_admin", "admin"]}><UserManagement /></RoleGuard>} />
