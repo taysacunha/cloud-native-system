@@ -56,7 +56,7 @@ const DeployGuide = () => {
           <Terminal className="h-5 w-5 text-primary mt-0.5" />
           <div className="text-sm">
             <p className="font-semibold">Stack utilizada:</p>
-            <p className="text-muted-foreground">Docker Engine (WSL2) · Supabase Self-Hosted · Nginx · Let's Encrypt (Certbot)</p>
+            <p className="text-muted-foreground">Docker Desktop ou Docker Engine (WSL2) · Supabase Self-Hosted · Nginx · Let's Encrypt (Certbot)</p>
           </div>
         </CardContent>
       </Card>
