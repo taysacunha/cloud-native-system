@@ -602,7 +602,7 @@ export default function EstoqueGestores() {
           <div className="space-y-4">
             <div>
               <Label>Usuário *</Label>
-              <Select value={form.user_id} onValueChange={(v) => setForm({ ...form, user_id: v })}>
+              <Select value={form.user_id} onValueChange={(v) => setForm({ ...form, user_id: v, unidade_ids: [] })}>
                 <SelectTrigger><SelectValue placeholder="Selecione o usuário" /></SelectTrigger>
                 <SelectContent>
                   {availableUsers.length === 0 ? (
@@ -628,15 +628,31 @@ export default function EstoqueGestores() {
               )}
             </div>
             <div>
-              <Label>Unidade *</Label>
-              <Select value={form.unidade_id} onValueChange={(v) => setForm({ ...form, unidade_id: v })}>
-                <SelectTrigger><SelectValue placeholder="Selecione a unidade" /></SelectTrigger>
-                <SelectContent>
-                  {unidades.map((u) => (
-                    <SelectItem key={u.id} value={u.id}>{u.nome}</SelectItem>
+              <Label>Unidades * <span className="text-xs text-muted-foreground font-normal">(selecione uma ou mais)</span></Label>
+              {unidadesDisponiveis.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-2">
+                  {form.user_id ? "Este usuário já é gestor de todas as unidades" : "Selecione um usuário primeiro"}
+                </p>
+              ) : (
+                <div className="space-y-2 mt-2 border rounded-md p-3">
+                  {unidadesDisponiveis.map((u) => (
+                    <label key={u.id} className="flex items-center gap-2 cursor-pointer">
+                      <Checkbox
+                        checked={form.unidade_ids.includes(u.id)}
+                        onCheckedChange={(checked) => {
+                          setForm((prev) => ({
+                            ...prev,
+                            unidade_ids: checked
+                              ? [...prev.unidade_ids, u.id]
+                              : prev.unidade_ids.filter((id) => id !== u.id),
+                          }));
+                        }}
+                      />
+                      <span className="text-sm">{u.nome}</span>
+                    </label>
                   ))}
-                </SelectContent>
-              </Select>
+                </div>
+              )}
             </div>
           </div>
           <DialogFooter>
