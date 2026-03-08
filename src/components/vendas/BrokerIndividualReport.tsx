@@ -617,6 +617,7 @@ export function BrokerIndividualReport({ teamFilter = "all" }: BrokerIndividualR
         <div ref={reportRef} className="space-y-6 bg-background p-4 rounded-lg">
           {/* Header */}
           <div className="text-center border-b pb-4">
+            <h1 className="text-lg font-semibold text-muted-foreground mb-1">Relatório Individual de Corretores</h1>
             <h2 className="text-2xl font-bold">{selectedBroker?.name}</h2>
             {selectedBroker?.sales_teams && (
               <p className="text-muted-foreground">Equipe: {selectedBroker.sales_teams.name}</p>
