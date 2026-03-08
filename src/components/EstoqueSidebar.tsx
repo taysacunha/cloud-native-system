@@ -30,6 +30,9 @@ const moduleMenuItems: MenuItem[] = [
   { title: "Dashboard", url: "/estoque", icon: Home },
   { title: "Materiais", url: "/estoque/materiais", icon: Package },
   { title: "Locais", url: "/estoque/locais", icon: MapPin },
+  { title: "Saldos", url: "/estoque/saldos", icon: PackageOpen },
+  { title: "Solicitações", url: "/estoque/solicitacoes", icon: ClipboardList },
+  { title: "Movimentações", url: "/estoque/movimentacoes", icon: ArrowDownUp },
   { title: "Gestores", url: "/estoque/gestores", icon: Users },
   { title: "Perfil", url: "/estoque/perfil", icon: UserCircle },
 ];
