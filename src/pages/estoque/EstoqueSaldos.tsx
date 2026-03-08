@@ -288,47 +288,67 @@ export default function EstoqueSaldos() {
             <div className="flex items-center justify-center p-12">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
             </div>
-          ) : filtered.length === 0 ? (
+          ) : paginatedData.length === 0 ? (
             <div className="flex flex-col items-center justify-center p-12 text-muted-foreground">
               <PackageOpen className="h-12 w-12 mb-4 opacity-50" />
               <p>Nenhum saldo cadastrado</p>
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Material</TableHead>
-                  <TableHead>Local</TableHead>
-                  <TableHead>Unidade</TableHead>
-                  <TableHead className="text-right">Quantidade</TableHead>
-                  <TableHead className="text-right">Mínimo</TableHead>
-                  <TableHead>Status</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filtered.map((s) => {
-                  const isLow = s.quantidade <= (s.material_estoque_minimo || 0) && (s.material_estoque_minimo || 0) > 0;
-                  return (
-                    <TableRow key={s.id} className={isLow ? "bg-yellow-500/5" : ""}>
-                      <TableCell className="font-medium">{s.material_nome}</TableCell>
-                      <TableCell>{s.local_nome}</TableCell>
-                      <TableCell>{s.unidade_nome}</TableCell>
-                      <TableCell className="text-right font-mono">{s.quantidade} {s.material_unidade}</TableCell>
-                      <TableCell className="text-right font-mono text-muted-foreground">{s.material_estoque_minimo}</TableCell>
-                      <TableCell>
-                        {isLow ? (
-                          <Badge variant="outline" className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30">
-                            <AlertTriangle className="h-3 w-3 mr-1" /> Baixo
-                          </Badge>
-                        ) : (
-                          <Badge variant="outline" className="bg-green-500/20 text-green-400 border-green-500/30">OK</Badge>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>
+                      <SortableHeader label="Material" field="material_nome" currentField={sortField as string} direction={sortDirection} onSort={setSorting as any} />
+                    </TableHead>
+                    <TableHead>
+                      <SortableHeader label="Local" field="local_nome" currentField={sortField as string} direction={sortDirection} onSort={setSorting as any} />
+                    </TableHead>
+                    <TableHead>
+                      <SortableHeader label="Unidade" field="unidade_nome" currentField={sortField as string} direction={sortDirection} onSort={setSorting as any} />
+                    </TableHead>
+                    <TableHead className="text-right">
+                      <SortableHeader label="Quantidade" field="quantidade" currentField={sortField as string} direction={sortDirection} onSort={setSorting as any} />
+                    </TableHead>
+                    <TableHead className="text-right">Mínimo</TableHead>
+                    <TableHead>Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {paginatedData.map((s) => {
+                    const isLow = s.quantidade <= (s.material_estoque_minimo || 0) && (s.material_estoque_minimo || 0) > 0;
+                    return (
+                      <TableRow key={s.id} className={isLow ? "bg-yellow-500/5" : ""}>
+                        <TableCell className="font-medium">{s.material_nome}</TableCell>
+                        <TableCell>{s.local_nome}</TableCell>
+                        <TableCell>{s.unidade_nome}</TableCell>
+                        <TableCell className="text-right font-mono">{s.quantidade} {s.material_unidade}</TableCell>
+                        <TableCell className="text-right font-mono text-muted-foreground">{s.material_estoque_minimo}</TableCell>
+                        <TableCell>
+                          {isLow ? (
+                            <Badge variant="outline" className="bg-yellow-500/20 text-yellow-400 border-yellow-500/30">
+                              <AlertTriangle className="h-3 w-3 mr-1" /> Baixo
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="bg-green-500/20 text-green-400 border-green-500/30">OK</Badge>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+              <div className="p-4">
+                <TablePagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  itemsPerPage={itemsPerPage}
+                  onPageChange={setCurrentPage}
+                  onItemsPerPageChange={setItemsPerPage}
+                  totalItems={filteredData.length}
+                />
+              </div>
+            </>
           )}
         </CardContent>
       </Card>
