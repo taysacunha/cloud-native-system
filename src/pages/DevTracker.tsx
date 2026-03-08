@@ -11,7 +11,7 @@ import { toast } from "@/hooks/use-toast";
 import { Lock, Plus, Pencil, Trash2, FileDown, Eye, EyeOff } from "lucide-react";
 import { Link } from "react-router-dom";
 
-const DEV_CODE = "EXECUT2026";
+const DEV_CODE = "S1g.D3v!Sup4b4s3";
 
 const SYSTEMS = [
   { value: "infraestrutura", label: "Login / Infraestrutura" },
