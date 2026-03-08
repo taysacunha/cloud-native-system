@@ -676,6 +676,23 @@ function checkTrulyInviolableRulesWithRelaxation(
   }
   
   // ═══════════════════════════════════════════════════════════
+  // REGRA: Interno + Externo no mesmo dia = PROIBIDO (também no relaxamento)
+  // ═══════════════════════════════════════════════════════════
+  const hasInternalSameDayRelax = context.assignments.some(a =>
+    a.broker_id === broker.brokerId &&
+    a.assignment_date === demand.dateStr &&
+    a.location_id !== demand.locationId &&
+    context.internalLocationIds?.has(a.location_id)
+  );
+  if (hasInternalSameDayRelax) {
+    return { 
+      allowed: false, 
+      reason: "Já tem plantão interno no mesmo dia - não pode acumular externo",
+      rule: "INTERNO_EXTERNO_MESMO_DIA"
+    };
+  }
+  
+  // ═══════════════════════════════════════════════════════════
   // REGRA 8: Dias consecutivos externos - RELAXÁVEL como último recurso
   // ═══════════════════════════════════════════════════════════
   const prevDay = format(subDays(demand.date, 1), "yyyy-MM-dd");

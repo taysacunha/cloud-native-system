@@ -113,10 +113,17 @@ export function validateGeneratedSchedule(
     assignmentsByBroker.get(a.broker_id)!.push(a);
   }
 
+  // Helper: dia da semana em inglês
+  const dayOfWeekMap: Record<number, string> = {
+    0: "sunday", 1: "monday", 2: "tuesday", 3: "wednesday",
+    4: "thursday", 5: "friday", 6: "saturday"
+  };
+
   // Validar cada corretor
   for (const [brokerId, brokerAssignments] of assignmentsByBroker) {
     const brokerName = brokerMap.get(brokerId) || "Desconhecido";
     const brokerViolations: PostValidationViolation[] = [];
+    const broker = brokers.find(b => b.id === brokerId);
 
     // Enriquecer assignments com nomes
     const enrichedAssignments = brokerAssignments.map(a => ({
@@ -128,6 +135,95 @@ export function validateGeneratedSchedule(
 
     // Ordenar por data
     enrichedAssignments.sort((a, b) => a.assignment_date.localeCompare(b.assignment_date));
+
+    // ═══════════════════════════════════════════════════════════
+    // NOVA REGRA: Corretor alocado fora da disponibilidade
+    // Verifica available_weekdays global
+    // ═══════════════════════════════════════════════════════════
+    if (broker?.availableWeekdays && broker.availableWeekdays.length > 0) {
+      for (const a of enrichedAssignments) {
+        const date = new Date(a.assignment_date + "T00:00:00");
+        const dayIndex = getDay(date);
+        const dayName = dayOfWeekMap[dayIndex];
+        
+        if (!broker.availableWeekdays.includes(dayName)) {
+          const dayLabel = format(date, "EEEE dd/MM", { locale: ptBR });
+          brokerViolations.push({
+            rule: "FORA_DISPONIBILIDADE",
+            severity: "error",
+            brokerName,
+            brokerId,
+            details: `${brokerName} alocado(a) em ${dayLabel} mas "${dayName}" não está na sua disponibilidade`,
+            dates: [a.assignment_date],
+            locations: [a.location_name || ""]
+          });
+        }
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // NOVA REGRA: Interno + Externo no mesmo dia
+    // ═══════════════════════════════════════════════════════════
+    const assignmentsByDate = new Map<string, typeof enrichedAssignments>();
+    for (const a of enrichedAssignments) {
+      if (!assignmentsByDate.has(a.assignment_date)) {
+        assignmentsByDate.set(a.assignment_date, []);
+      }
+      assignmentsByDate.get(a.assignment_date)!.push(a);
+    }
+    
+    for (const [dateStr, dayAssignments] of assignmentsByDate) {
+      const hasInternal = dayAssignments.some(a => a.location_type === "internal");
+      const hasExternal = dayAssignments.some(a => a.location_type === "external");
+      
+      if (hasInternal && hasExternal) {
+        const date = new Date(dateStr + "T00:00:00");
+        const dayLabel = format(date, "EEEE dd/MM", { locale: ptBR });
+        const internalLocs = dayAssignments.filter(a => a.location_type === "internal").map(a => a.location_name);
+        const externalLocs = dayAssignments.filter(a => a.location_type === "external").map(a => a.location_name);
+        
+        brokerViolations.push({
+          rule: "INTERNO_EXTERNO_MESMO_DIA",
+          severity: "error",
+          brokerName,
+          brokerId,
+          details: `${brokerName} com interno (${internalLocs.join(", ")}) e externo (${externalLocs.join(", ")}) no mesmo dia (${dayLabel})`,
+          dates: [dateStr],
+          locations: [...internalLocs, ...externalLocs]
+        });
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // NOVA REGRA: Turno alocado em horário não configurado
+    // ═══════════════════════════════════════════════════════════
+    if (locationShiftConfigs) {
+      for (const a of enrichedAssignments) {
+        const locConfigs = locationShiftConfigs.get(a.location_id);
+        if (!locConfigs) continue;
+        
+        const dayConfig = locConfigs.get(a.assignment_date);
+        if (!dayConfig) continue;
+        
+        const shiftLabel = a.shift_type === "morning" ? "manhã" : "tarde";
+        const isAllowed = a.shift_type === "morning" ? dayConfig.hasMorning : dayConfig.hasAfternoon;
+        
+        if (!isAllowed) {
+          const date = new Date(a.assignment_date + "T00:00:00");
+          const dayLabel = format(date, "EEEE dd/MM", { locale: ptBR });
+          
+          brokerViolations.push({
+            rule: "TURNO_NAO_CONFIGURADO",
+            severity: "error",
+            brokerName,
+            brokerId,
+            details: `${a.location_name} - ${dayLabel} tem turno da ${shiftLabel} alocado mas este turno não está configurado no local`,
+            dates: [a.assignment_date],
+            locations: [a.location_name || ""]
+          });
+        }
+      }
+    }
 
     // ═══════════════════════════════════════════════════════════
     // REGRA 1: Máximo 2 DIAS com externos por semana
