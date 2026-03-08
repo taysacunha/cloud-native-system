@@ -240,13 +240,17 @@ export default function EstoqueSolicitacoes() {
     setItens(updated);
   };
 
-  const filtered = solicitacoes.filter((s) => {
-    if (filterStatus !== "all" && s.status !== filterStatus) return false;
-    if (searchTerm && !s.solicitante_nome.toLowerCase().includes(searchTerm.toLowerCase())) return false;
-    return true;
-  });
+  const filteredByStatus = solicitacoes.filter((s) => filterStatus === "all" || s.status === filterStatus);
 
-  const getUnidadeNome = (id: string | null) => unidades.find((u) => u.id === id)?.nome || "—";
+  const {
+    searchTerm, setSearchTerm, currentPage, setCurrentPage,
+    itemsPerPage, setItemsPerPage, sortField, sortDirection, setSorting,
+    paginatedData, filteredData, totalPages,
+  } = useTableControls({
+    data: filteredByStatus,
+    searchField: "solicitante_nome",
+    defaultItemsPerPage: 25,
+  });
 
   return (
     <div className="space-y-6">
