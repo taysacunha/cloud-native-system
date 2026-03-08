@@ -61,7 +61,7 @@ export default function EstoqueGestores() {
   const canManage = role === "super_admin" || role === "admin";
 
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [form, setForm] = useState({ user_id: "", unidade_id: "" });
+  const [form, setForm] = useState<{ user_id: string; unidade_ids: string[] }>({ user_id: "", unidade_ids: [] });
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; nome: string } | null>(null);
 
   // User-unit link state
