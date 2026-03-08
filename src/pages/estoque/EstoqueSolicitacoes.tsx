@@ -187,11 +187,21 @@ export default function EstoqueSolicitacoes() {
   });
 
   const updateStatusMutation = useMutation({
-    mutationFn: async ({ id, newStatus }: { id: string; newStatus: string }) => {
+    mutationFn: async ({ id, newStatus, solicitacao }: { id: string; newStatus: string; solicitacao: Solicitacao }) => {
       const { error } = await fromEstoque("estoque_solicitacoes")
         .update({ status: newStatus } as any)
         .eq("id", id);
       if (error) throw error;
+
+      // Notify the requester about status change
+      const statusLabel = STATUS_LABELS[newStatus] || newStatus;
+      await criarNotificacao({
+        user_id: solicitacao.solicitante_user_id,
+        tipo: newStatus === "entregue" ? "material_entregue" : "status_atualizado",
+        mensagem: `Sua solicitação foi atualizada para: ${statusLabel}`,
+        referencia_id: id,
+        referencia_tipo: "solicitacao",
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["estoque-solicitacoes"] });
