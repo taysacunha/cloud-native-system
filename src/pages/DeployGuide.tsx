@@ -311,9 +311,9 @@ server_name _;  # Aceita qualquer hostname
         </div>
       </Step>
 
-      <Card className="mt-8 mb-8 border-amber-500/30 bg-amber-500/5">
+      <Card className="mt-8 mb-8 border-destructive/30 bg-destructive/5">
         <CardContent className="py-4 text-sm">
-          <p className="font-semibold text-amber-700 dark:text-amber-400 mb-1">⚠️ Observações Importantes</p>
+          <p className="font-semibold text-destructive mb-1">⚠️ Observações Importantes</p>
           <ul className="list-disc pl-5 space-y-1 text-muted-foreground">
             <li>Faça backups regulares do banco: <code>pg_dump</code> agendado no Task Scheduler</li>
             <li>Monitore os containers: <code>docker compose logs -f</code></li>
