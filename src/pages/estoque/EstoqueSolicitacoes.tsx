@@ -384,15 +384,20 @@ export default function EstoqueSolicitacoes() {
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>Unidade</Label>
+              <Label>Unidade *</Label>
               <Select value={unidadeId} onValueChange={setUnidadeId}>
                 <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
                 <SelectContent>
-                  {unidades.map((u) => (
+                  {unidadesPermitidas.map((u) => (
                     <SelectItem key={u.id} value={u.id}>{u.nome}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              {unidadesPermitidas.length === 0 && (
+                <p className="text-xs text-destructive mt-1">
+                  Você não está vinculado a nenhuma unidade. Solicite ao administrador.
+                </p>
+              )}
             </div>
             <div>
               <Label>Observações</Label>
