@@ -392,21 +392,44 @@ export function BrokerIndividualReport({ teamFilter = "all" }: BrokerIndividualR
       return;
     }
 
-    setIsExporting(true);
     try {
+      const [evaluationRes, lastVisitRes] = await Promise.all([
+        supabase
+          .from("broker_evaluations")
+          .select("year_month, obs_feedbacks, acoes_melhorias_c2s, metas_acoes_futuras, average_score")
+          .eq("broker_id", selectedBrokerId)
+          .in("year_month", reportMonths)
+          .order("year_month", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .from("monthly_leads")
+          .select("last_visit_date")
+          .eq("broker_id", selectedBrokerId)
+          .in("year_month", reportMonths)
+          .not("last_visit_date", "is", null)
+          .order("last_visit_date", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+      ]);
+
+      setPdfEvaluationSnapshot(evaluationRes.data ?? null);
+      setPdfLastVisitSnapshot(lastVisitRes.data?.last_visit_date ?? null);
+
+      setIsExporting(true);
       // Wait for React to render PDF-only blocks
-      await new Promise(r => setTimeout(r, 300));
+      await new Promise((r) => setTimeout(r, 450));
+
       const canvas = await html2canvas(reportRef.current, {
         scale: 2,
         useCORS: true,
         logging: false,
         backgroundColor: "#ffffff",
-        foreignObjectRendering: false, // Evitar problemas com SVG
+        foreignObjectRendering: false,
         onclone: (clonedDoc) => {
-          // Forçar estilos sólidos nos elementos SVG para captura
-          const svgs = clonedDoc.querySelectorAll('svg');
-          svgs.forEach(svg => {
-            svg.style.fontFamily = 'sans-serif';
+          const svgs = clonedDoc.querySelectorAll("svg");
+          svgs.forEach((svg) => {
+            svg.style.fontFamily = "sans-serif";
           });
         },
       });
@@ -422,9 +445,12 @@ export function BrokerIndividualReport({ teamFilter = "all" }: BrokerIndividualR
       const pdfHeight = pdf.internal.pageSize.getHeight();
       const imgWidth = canvas.width;
       const imgHeight = canvas.height;
-      const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
+      const margin = 5;
+      const maxWidth = pdfWidth - margin * 2;
+      const maxHeight = pdfHeight - margin * 2;
+      const ratio = Math.min(maxWidth / imgWidth, maxHeight / imgHeight);
       const imgX = (pdfWidth - imgWidth * ratio) / 2;
-      const imgY = 10;
+      const imgY = margin;
 
       pdf.addImage(imgData, "PNG", imgX, imgY, imgWidth * ratio, imgHeight * ratio);
       pdf.save(`relatorio_${selectedBroker?.name || "corretor"}_${selectedYear}.pdf`);
@@ -434,6 +460,8 @@ export function BrokerIndividualReport({ teamFilter = "all" }: BrokerIndividualR
       toast.error("Erro ao exportar PDF");
     } finally {
       setIsExporting(false);
+      setPdfEvaluationSnapshot(null);
+      setPdfLastVisitSnapshot(null);
     }
   };
 
