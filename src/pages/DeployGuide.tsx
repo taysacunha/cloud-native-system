@@ -70,9 +70,38 @@ const DeployGuide = () => {
 # Depois, defina o WSL2 como padrão:
 wsl --set-default-version 2`}</CodeBlock>
 
-        <p><strong>1.2 — Instalar Docker Engine no WSL2 (gratuito):</strong></p>
+        <p><strong>1.2 — Instalar Docker (duas opções):</strong></p>
+
+        <InfoBox>
+          <p><strong>Docker Desktop vs Docker Engine — qual a diferença?</strong></p>
+          <ul className="list-disc pl-5 mt-2 space-y-1">
+            <li><strong>Docker Desktop</strong> = aplicação com interface gráfica (GUI) que inclui o Docker Engine embutido + Docker Compose + gerenciamento visual de containers, imagens e volumes. Funciona diretamente no Windows (usa WSL2 internamente).</li>
+            <li><strong>Docker Engine</strong> = motor principal que executa os containers. É CLI puro (linha de comando), open-source e sem restrições de licença. Instalado manualmente dentro do WSL2.</li>
+          </ul>
+          <p className="mt-2 font-medium">Em resumo: Docker Desktop = GUI + Engine embutido. Docker Engine = apenas o motor, sem GUI.</p>
+        </InfoBox>
+
+        <p><strong>Opção A — Docker Desktop (recomendado para pequenas empresas):</strong></p>
+        <InfoBox>
+          <p><strong>Gratuito</strong> para empresas com menos de 250 funcionários <strong>e</strong> receita anual abaixo de US$10 milhões. Ideal para quem prefere interface gráfica e facilidade de gerenciamento.</p>
+        </InfoBox>
+        <CodeBlock>{`# 1. Baixe o Docker Desktop para Windows:
+#    https://www.docker.com/products/docker-desktop/
+#
+# 2. Execute o instalador e marque "Use WSL 2 instead of Hyper-V"
+#
+# 3. Após instalar, abra o Docker Desktop (ele inicia automaticamente com o Windows)
+#
+# 4. Verifique no PowerShell ou terminal WSL:
+docker --version
+docker compose version
+#
+# Pronto! O Docker Desktop já integra com o WSL2 automaticamente.
+# Você pode gerenciar containers pela interface gráfica ou pelo terminal.`}</CodeBlock>
+
+        <p><strong>Opção B — Docker Engine no WSL2 (sem licença, CLI puro):</strong></p>
         <WarningBox>
-          <p><strong>Docker Desktop</strong> exige licença paga para uso comercial (empresas com mais de 250 funcionários ou receita anual acima de US$10M). A alternativa gratuita é instalar o <strong>Docker Engine</strong> diretamente dentro do WSL2.</p>
+          <p>Use esta opção se a empresa <strong>não se qualifica</strong> para o Docker Desktop gratuito, ou se prefere uma instalação mais leve sem GUI.</p>
         </WarningBox>
         <CodeBlock>{`# Abra o terminal WSL (Ubuntu):
 wsl
@@ -98,7 +127,7 @@ docker --version
 docker compose version`}</CodeBlock>
 
         <InfoBox>
-          <p>Para que o Docker inicie automaticamente quando o servidor ligar, crie uma tarefa no <strong>Task Scheduler</strong> do Windows que execute <code>wsl -d Ubuntu -u root service docker start</code> na inicialização.</p>
+          <p><strong>Auto-start:</strong> Se usar Docker Desktop, ele já inicia com o Windows. Se usar Docker Engine no WSL2, crie uma tarefa no <strong>Task Scheduler</strong> do Windows que execute <code>wsl -d Ubuntu -u root service docker start</code> na inicialização.</p>
         </InfoBox>
 
         <p><strong>1.3 — Instalar Git e Node.js:</strong></p>
