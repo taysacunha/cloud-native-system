@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { Loader2, History, ArrowDownUp } from "lucide-react";
+import { Loader2, ArrowDownUp } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useTableControls } from "@/hooks/useTableControls";
+import { TableSearch, TablePagination, SortableHeader } from "@/components/vendas/TableControls";
 
 const fromEstoque = (table: string) => supabase.from(table as any);
 
@@ -40,7 +41,6 @@ const TIPO_COLORS: Record<string, string> = {
 };
 
 export default function EstoqueMovimentacoes() {
-  const [searchTerm, setSearchTerm] = useState("");
   const [filterTipo, setFilterTipo] = useState<string>("all");
 
   const { data: materiais = [] } = useQuery({
@@ -91,15 +91,23 @@ export default function EstoqueMovimentacoes() {
     return `${local.nome} (${unidade?.nome || ""})`;
   };
 
-  const filtered = movimentacoes.filter((m) => {
-    if (filterTipo !== "all" && m.tipo !== filterTipo) return false;
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase();
-      const matNome = getMaterialNome(m.material_id).toLowerCase();
-      const obs = (m.observacoes || "").toLowerCase();
-      if (!matNome.includes(term) && !obs.includes(term)) return false;
-    }
-    return true;
+  // Enrich data for table controls
+  const enriched = movimentacoes
+    .filter((m) => filterTipo === "all" || m.tipo === filterTipo)
+    .map((m) => ({
+      ...m,
+      material_nome: getMaterialNome(m.material_id),
+      tipo_label: TIPO_LABELS[m.tipo] || m.tipo,
+    }));
+
+  const {
+    searchTerm, setSearchTerm, currentPage, setCurrentPage,
+    itemsPerPage, setItemsPerPage, sortField, sortDirection, setSorting,
+    paginatedData, filteredData, totalPages,
+  } = useTableControls({
+    data: enriched,
+    searchField: ["material_nome", "observacoes"],
+    defaultItemsPerPage: 25,
   });
 
   return (
@@ -109,16 +117,10 @@ export default function EstoqueMovimentacoes() {
         <p className="text-muted-foreground">Histórico completo de movimentações do estoque</p>
       </div>
 
-      {/* Filters */}
       <Card>
         <CardContent className="pt-4">
           <div className="flex flex-col sm:flex-row gap-3">
-            <Input
-              placeholder="Buscar por material ou observação..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="sm:max-w-xs"
-            />
+            <TableSearch value={searchTerm} onChange={setSearchTerm} placeholder="Buscar por material ou observação..." />
             <Select value={filterTipo} onValueChange={setFilterTipo}>
               <SelectTrigger className="sm:max-w-[180px]">
                 <SelectValue />
@@ -134,54 +136,71 @@ export default function EstoqueMovimentacoes() {
         </CardContent>
       </Card>
 
-      {/* Table */}
       <Card>
         <CardContent className="p-0">
           {isLoading ? (
             <div className="flex items-center justify-center p-12">
               <Loader2 className="h-8 w-8 animate-spin text-primary" />
             </div>
-          ) : filtered.length === 0 ? (
+          ) : paginatedData.length === 0 ? (
             <div className="flex flex-col items-center justify-center p-12 text-muted-foreground">
               <ArrowDownUp className="h-12 w-12 mb-4 opacity-50" />
               <p>Nenhuma movimentação encontrada</p>
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Data</TableHead>
-                  <TableHead>Tipo</TableHead>
-                  <TableHead>Material</TableHead>
-                  <TableHead className="text-right">Qtd</TableHead>
-                  <TableHead>Origem</TableHead>
-                  <TableHead>Destino</TableHead>
-                  <TableHead>Observações</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filtered.map((mov) => (
-                  <TableRow key={mov.id}>
-                    <TableCell className="whitespace-nowrap">
-                      {new Date(mov.created_at).toLocaleDateString("pt-BR")}{" "}
-                      <span className="text-muted-foreground text-xs">
-                        {new Date(mov.created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={TIPO_COLORS[mov.tipo] || ""}>
-                        {TIPO_LABELS[mov.tipo] || mov.tipo}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="font-medium">{getMaterialNome(mov.material_id)}</TableCell>
-                    <TableCell className="text-right font-mono">{mov.quantidade}</TableCell>
-                    <TableCell className="text-sm">{getLocalNome(mov.local_origem_id)}</TableCell>
-                    <TableCell className="text-sm">{getLocalNome(mov.local_destino_id)}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">{mov.observacoes || "—"}</TableCell>
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>
+                      <SortableHeader label="Data" field="created_at" currentField={sortField as string} direction={sortDirection} onSort={setSorting as any} />
+                    </TableHead>
+                    <TableHead>Tipo</TableHead>
+                    <TableHead>
+                      <SortableHeader label="Material" field="material_nome" currentField={sortField as string} direction={sortDirection} onSort={setSorting as any} />
+                    </TableHead>
+                    <TableHead className="text-right">
+                      <SortableHeader label="Qtd" field="quantidade" currentField={sortField as string} direction={sortDirection} onSort={setSorting as any} />
+                    </TableHead>
+                    <TableHead>Origem</TableHead>
+                    <TableHead>Destino</TableHead>
+                    <TableHead>Observações</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {paginatedData.map((mov) => (
+                    <TableRow key={mov.id}>
+                      <TableCell className="whitespace-nowrap">
+                        {new Date(mov.created_at).toLocaleDateString("pt-BR")}{" "}
+                        <span className="text-muted-foreground text-xs">
+                          {new Date(mov.created_at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className={TIPO_COLORS[mov.tipo] || ""}>
+                          {TIPO_LABELS[mov.tipo] || mov.tipo}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="font-medium">{mov.material_nome}</TableCell>
+                      <TableCell className="text-right font-mono">{mov.quantidade}</TableCell>
+                      <TableCell className="text-sm">{getLocalNome(mov.local_origem_id)}</TableCell>
+                      <TableCell className="text-sm">{getLocalNome(mov.local_destino_id)}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">{mov.observacoes || "—"}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              <div className="p-4">
+                <TablePagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  itemsPerPage={itemsPerPage}
+                  onPageChange={setCurrentPage}
+                  onItemsPerPageChange={setItemsPerPage}
+                  totalItems={filteredData.length}
+                />
+              </div>
+            </>
           )}
         </CardContent>
       </Card>

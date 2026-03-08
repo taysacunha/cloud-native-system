@@ -25,7 +25,7 @@ interface UseTableControlsReturn<T> {
 export function useTableControls<T extends Record<string, any>>({
   data,
   searchField,
-  defaultItemsPerPage = 20,
+  defaultItemsPerPage = 25,
 }: UseTableControlsOptions<T>): UseTableControlsReturn<T> {
   const [searchTerm, setSearchTerm] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
