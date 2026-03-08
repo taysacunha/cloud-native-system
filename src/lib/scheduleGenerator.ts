@@ -3376,6 +3376,16 @@ async function generateWeeklyScheduleWithAccumulator(
       
       // Função para verificar elegibilidade
       const isEligibleForSaturdayInternal = (brokerId: string): { eligible: boolean; reason?: string } => {
+        // ═══════════════════════════════════════════════════════════
+        // CORREÇÃO: Verificar disponibilidade GLOBAL do corretor
+        // A fila de sábado só verifica vínculo local, mas o corretor
+        // pode não ter sábado na disponibilidade global
+        // ═══════════════════════════════════════════════════════════
+        const brokerFromQueue = brokerQueue.find(b => b.brokerId === brokerId);
+        if (brokerFromQueue && !brokerFromQueue.availableWeekdays.includes("saturday")) {
+          return { eligible: false, reason: 'sem sábado na disponibilidade global' };
+        }
+        
         // Verificar se já foi alocado no sábado (neste local)
         if (alreadyAllocatedBrokerIds.has(brokerId)) {
           return { eligible: false, reason: 'já alocado neste local' };
