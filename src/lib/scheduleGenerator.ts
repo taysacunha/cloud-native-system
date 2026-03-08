@@ -496,6 +496,24 @@ function checkTrulyInviolableRules(
     }
   }
   
+  // ═══════════════════════════════════════════════════════════
+  // REGRA: Interno + Externo no mesmo dia = PROIBIDO
+  // Corretor com interno não pode receber externo no mesmo dia
+  // ═══════════════════════════════════════════════════════════
+  const hasInternalSameDay = context.assignments.some(a =>
+    a.broker_id === broker.brokerId &&
+    a.assignment_date === demand.dateStr &&
+    a.location_id !== demand.locationId &&
+    context.internalLocationIds?.has(a.location_id)
+  );
+  if (hasInternalSameDay) {
+    return { 
+      allowed: false, 
+      reason: "Já tem plantão interno no mesmo dia - não pode acumular externo",
+      rule: "INTERNO_EXTERNO_MESMO_DIA"
+    };
+  }
+  
   // REGRA 8: Dias consecutivos externos - NÃO verificada aqui
   // Esta regra foi movida para checkTrulyInviolableRulesWithRelaxation()
   // para permitir relaxamento como último recurso
