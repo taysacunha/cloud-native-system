@@ -198,6 +198,8 @@ export function ValidationReportPanel({ result, onClose }: ValidationReportPanel
   const errorCount = allViolations.filter(v => v.severity === "error").length;
   const warningCount = allViolations.filter(v => v.severity === "warning").length;
 
+  if (!result) return null;
+
   return (
     <div className="space-y-4">
       {/* ─── Summary Badges ──────────────────────────────── */}
