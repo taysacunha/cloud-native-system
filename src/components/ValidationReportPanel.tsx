@@ -120,6 +120,7 @@ export function ValidationReportPanel({ result, onClose }: ValidationReportPanel
   }, [allViolations, severityFilter, ruleFilter, searchBroker]);
 
   const filteredBrokerReports = useMemo(() => {
+    if (!result) return [];
     let reports = [...result.brokerReports];
     
     if (searchBroker) {
@@ -148,7 +149,7 @@ export function ValidationReportPanel({ result, onClose }: ValidationReportPanel
     });
 
     return reports;
-  }, [result.brokerReports, severityFilter, ruleFilter, searchBroker]);
+  }, [result, severityFilter, ruleFilter, searchBroker]);
 
   const filteredViolationsByRule = useMemo(() => {
     const map = new Map<string, PostValidationViolation[]>();
