@@ -37,7 +37,7 @@ const weekdaysMap: Record<string, string> = {
 export function SchedulePDFGenerator({ assignments, scheduleWeekStart, scheduleWeekEnd, generatedAt, updatedAt, scheduleId }: SchedulePDFGeneratorProps) {
   // Load observation for PDF
   const { data: observation } = useQuery({
-    queryKey: ["schedule-observation-pdf", scheduleId],
+    queryKey: ["schedule-observation", scheduleId],
     queryFn: async () => {
       if (!scheduleId) return null;
       const { data, error } = await supabase
