@@ -5,6 +5,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Button } from "@/components/ui/button";
 import { MessageSquare } from "lucide-react";
 interface ScheduleAssignment {
   id?: string;
@@ -36,7 +37,7 @@ const weekdaysMap: Record<string, string> = {
 export function ScheduleCalendarView({ assignments, scheduleWeekStart, scheduleWeekEnd, scheduleId }: ScheduleCalendarViewProps) {
   const queryClient = useQueryClient();
   const [observationText, setObservationText] = useState("");
-  const [saveTimeout, setSaveTimeout] = useState<NodeJS.Timeout | null>(null);
+  const [observationDirty, setObservationDirty] = useState(false);
 
   // Load existing observation
   const { data: savedObservation } = useQuery({
@@ -78,12 +79,13 @@ export function ScheduleCalendarView({ assignments, scheduleWeekStart, scheduleW
 
   const handleObservationChange = useCallback((value: string) => {
     setObservationText(value);
-    if (saveTimeout) clearTimeout(saveTimeout);
-    const timeout = setTimeout(() => {
-      saveMutation.mutate(value);
-    }, 1000);
-    setSaveTimeout(timeout);
-  }, [saveTimeout, saveMutation]);
+    setObservationDirty(true);
+  }, []);
+
+  const handleSaveObservation = useCallback(() => {
+    saveMutation.mutate(observationText);
+    setObservationDirty(false);
+  }, [observationText, saveMutation]);
   // Buscar todos os corretores ativos do banco
   const { data: activeBrokers } = useQuery({
     queryKey: ["active-brokers-for-calendar"],
@@ -558,9 +560,18 @@ export function ScheduleCalendarView({ assignments, scheduleWeekStart, scheduleW
             placeholder="Adicione observações sobre esta escala..."
             className="min-h-[80px] resize-y"
           />
-          <p className="text-xs text-muted-foreground mt-1">
-            {saveMutation.isPending ? "Salvando..." : saveMutation.isSuccess ? "✓ Salvo" : "Auto-save ativado"}
-          </p>
+          <div className="flex items-center gap-3 mt-2">
+            <Button
+              size="sm"
+              onClick={handleSaveObservation}
+              disabled={!observationDirty || saveMutation.isPending}
+            >
+              {saveMutation.isPending ? "Salvando..." : "Salvar Observação"}
+            </Button>
+            {saveMutation.isSuccess && !observationDirty && (
+              <span className="text-xs text-green-600">✓ Salvo</span>
+            )}
+          </div>
         </div>
       )}
     </div>

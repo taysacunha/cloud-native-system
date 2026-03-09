@@ -1,53 +1,57 @@
 
 
-## Plano: 4 Correções
+## Plano - 4 Correções
 
-### 1. Interno + Externo no mesmo dia: permitir seg-sex, erro apenas no sábado
+### 1. Dialog de corretores quebrado (sem scroll)
 
-**Gerador (`scheduleGenerator.ts`)**:
-- Linhas 499-515: mudar bloqueio para aplicar apenas quando `getDay(date) === 6` (sábado). Dias de semana: permitir se turno diferente.
-- Linhas 678-693: mesma mudança na função de relaxamento.
+**Problema:** O `DialogContent` em `SalesBrokers.tsx` (linha 473) não tem limite de altura. Com os novos campos CRECI e Nome de Exibição, o conteúdo ultrapassa a viewport e os botões Cancelar/Salvar ficam inacessíveis.
 
-**Validador (`schedulePostValidation.ts`)**:
-- Linhas 175-194: verificar `getDay(date)` — se sábado → `severity: "error"`, se dia de semana → `severity: "warning"`.
+**Solução:** Adicionar `className="max-w-lg max-h-[90vh] overflow-y-auto"` ao `DialogContent` (linha 473). O `DialogFooter` (linha 638) receberá `className="sticky bottom-0 bg-background pt-4 border-t"` para ficar sempre visível.
 
-**Painel de validação (`ValidationReportPanel.tsx`)**:
-- Atualizar explicação da regra `INTERNO_EXTERNO_MESMO_DIA` para: "Interno e externo no mesmo dia é permitido seg-sex (turnos diferentes), mas proibido aos sábados."
+**Arquivo:** `src/pages/vendas/SalesBrokers.tsx` (linhas 473, 638)
 
-### 2. Garantir alocação de todos os externos
+---
 
-**Gerador (`scheduleGenerator.ts`)**: Após a etapa 9 (linha ~3774), adicionar um **passe final conservador** para demandas externas ainda não alocadas:
-1. Tentar alocar relaxando apenas a regra `INTERNO_EXTERNO_MESMO_DIA` (já permitida seg-sex pelo item 1)
-2. Se ainda falhar, relaxar regra de consecutivos + gate 2-antes-3 simultaneamente
-3. Registrar cada alocação em `relaxedAllocations` com a regra específica quebrada
-4. **Nunca** relaxar: disponibilidade de dia/turno, vínculo ao local, hard cap de externos
+### 2. Relatório Corretores Vendas - dados de meses sem cadastro
 
-O validador continuará reportando cada violação como warning, dando visibilidade total ao usuário.
+**Problema:** No modo mensal, o `months` (linha 200-224) inclui o mês anterior para "contexto de evolução". Os totais (linhas 400-409) e queries de `saleDetails`, `proposalsData`, `leadsData`, `evaluationsData` usam esse array completo, então dados do mês anterior "vazam" para o mês selecionado.
 
-### 3. Observações: botão salvar manual
+**Solução:** Criar um `reportMonths` separado que contém apenas o mês selecionado (sem o anterior). Usar `reportMonths` para calcular totais e buscar `saleDetails`. Manter `months` completo apenas para os gráficos de evolução (`salesData`, `proposalsData`, `leadsData`, `evaluationsData` nos charts).
 
-**`ScheduleCalendarView.tsx`** (linhas 79-86, 548-565):
-- Remover lógica de `saveTimeout` e auto-save por debounce
-- `onChange` apenas atualiza `observationText` (state local)
-- Adicionar botão "Salvar" ao lado do textarea que chama `saveMutation.mutate(observationText)`
-- Feedback: "Salvo ✓" após sucesso, "Salvando..." durante pending
+Concretamente:
+- Adicionar `const reportMonths = periodType === "month" ? [months[months.length - 1]] : months;`
+- Alterar `totalVGV`, `totalSales` para somar apenas entries cujo `month` esteja em `reportMonths`
+- Alterar `totalProposals`, `totalConverted`, `totalLeads`, `totalLeadsActive`, `totalVisits`, `avgScore` idem
+- Alterar query de `saleDetails` para usar `reportMonths` no `.in("year_month", ...)`
 
-### 4. PDF de corretores ativos (Vendas)
+**Arquivo:** `src/components/vendas/BrokerIndividualReport.tsx` (linhas ~200, 384-409)
 
-**`SalesBrokers.tsx`**: Adicionar botão "Exportar PDF" no header do card. Ao clicar:
-- Usa `jsPDF` para gerar PDF com:
-  - **Cabeçalho**: Logo Execut (do `src/assets/execut-logo.jpg`) + "Execut Negócios Imobiliários" + "Lista de Corretores"
-  - **Total**: "Total: XX corretores ativos"
-  - **Tabela**: # | Nome | CRECI — todos os corretores ativos ordenados por nome
-- Carrega a imagem do logo via `fetch` + `FileReader` para converter em base64 para o jsPDF
+---
 
-### Arquivos afetados
+### 3. Divs de vendas/avaliação não aparecem no PDF
+
+**Problema:** `hidden print:block` (linhas 713, 753) funciona com `window.print()` mas **não** com `html2canvas`, que captura o estado visual atual do DOM. Os elementos ficam `display:none` durante a captura.
+
+**Solução:** Usar o estado `isExporting` (já existe, linha 192) para controlar visibilidade:
+- Trocar `className="hidden print:block"` por renderização condicional: `{isExporting && saleDetails.length > 0 && (<Card>...</Card>)}`
+- No `handleExportPDF` (linha 428), o `setIsExporting(true)` já é chamado antes do `html2canvas`. Adicionar um `await new Promise(r => setTimeout(r, 100))` entre o `setIsExporting(true)` e o `html2canvas` para dar tempo ao React de renderizar os blocos.
+
+**Arquivo:** `src/components/vendas/BrokerIndividualReport.tsx` (linhas 711-755, 434-436)
+
+---
+
+### 4. Ajuste de qualidade - acessibilidade do dialog
+
+**Identificado:** O `DialogContent` de corretores já tem `DialogDescription`, então está ok. Verificar se outros dialogs do mesmo arquivo têm `DialogDescription` para evitar warnings no console.
+
+**Arquivo:** `src/pages/vendas/SalesBrokers.tsx`
+
+---
+
+### Resumo
 
 | Arquivo | Alteração |
 |---------|-----------|
-| `src/lib/scheduleGenerator.ts` | Regra interno+externo só sábado + passe final para externos |
-| `src/lib/schedulePostValidation.ts` | Severity condicional (sábado=error, semana=warning) |
-| `src/components/ValidationReportPanel.tsx` | Atualizar explicação da regra |
-| `src/components/ScheduleCalendarView.tsx` | Trocar auto-save por botão salvar |
-| `src/pages/vendas/SalesBrokers.tsx` | Botão + geração PDF corretores ativos |
+| `SalesBrokers.tsx` | Scroll + footer sticky no dialog |
+| `BrokerIndividualReport.tsx` | `reportMonths` para totais, renderização condicional por `isExporting` |
 

@@ -497,21 +497,36 @@ function checkTrulyInviolableRules(
   }
   
   // ═══════════════════════════════════════════════════════════
-  // REGRA: Interno + Externo no mesmo dia = PROIBIDO
-  // Corretor com interno não pode receber externo no mesmo dia
+  // REGRA: Interno + Externo no mesmo dia
+  // SÁBADO: PROIBIDO (erro hard)
+  // SEG-SEX: Permitido se em turnos diferentes (interno manhã + externo tarde, etc.)
   // ═══════════════════════════════════════════════════════════
-  const hasInternalSameDay = context.assignments.some(a =>
+  const isSaturday = getDay(demand.date) === 6;
+  const internalSameDayAssignments = context.assignments.filter(a =>
     a.broker_id === broker.brokerId &&
     a.assignment_date === demand.dateStr &&
     a.location_id !== demand.locationId &&
     context.internalLocationIds?.has(a.location_id)
   );
-  if (hasInternalSameDay) {
-    return { 
-      allowed: false, 
-      reason: "Já tem plantão interno no mesmo dia - não pode acumular externo",
-      rule: "INTERNO_EXTERNO_MESMO_DIA"
-    };
+  if (internalSameDayAssignments.length > 0) {
+    if (isSaturday) {
+      // Sábado: proibido sempre
+      return { 
+        allowed: false, 
+        reason: "Já tem plantão interno no sábado - não pode acumular externo",
+        rule: "INTERNO_EXTERNO_MESMO_DIA"
+      };
+    }
+    // Seg-sex: proibido apenas se mesmo turno
+    const hasSameShiftConflict = internalSameDayAssignments.some(a => a.shift_type === demand.shift);
+    if (hasSameShiftConflict) {
+      return { 
+        allowed: false, 
+        reason: "Já tem plantão interno no mesmo turno - conflito de horário",
+        rule: "INTERNO_EXTERNO_MESMO_DIA"
+      };
+    }
+    // Seg-sex em turnos diferentes: permitido (segue verificação)
   }
   
   // REGRA 8: Dias consecutivos externos - NÃO verificada aqui
@@ -676,20 +691,33 @@ function checkTrulyInviolableRulesWithRelaxation(
   }
   
   // ═══════════════════════════════════════════════════════════
-  // REGRA: Interno + Externo no mesmo dia = PROIBIDO (também no relaxamento)
+  // REGRA: Interno + Externo no mesmo dia (relaxamento)
+  // SÁBADO: PROIBIDO sempre
+  // SEG-SEX: Permitido se em turnos diferentes
   // ═══════════════════════════════════════════════════════════
-  const hasInternalSameDayRelax = context.assignments.some(a =>
+  const isSaturdayRelax = getDay(demand.date) === 6;
+  const internalSameDayRelax = context.assignments.filter(a =>
     a.broker_id === broker.brokerId &&
     a.assignment_date === demand.dateStr &&
     a.location_id !== demand.locationId &&
     context.internalLocationIds?.has(a.location_id)
   );
-  if (hasInternalSameDayRelax) {
-    return { 
-      allowed: false, 
-      reason: "Já tem plantão interno no mesmo dia - não pode acumular externo",
-      rule: "INTERNO_EXTERNO_MESMO_DIA"
-    };
+  if (internalSameDayRelax.length > 0) {
+    if (isSaturdayRelax) {
+      return { 
+        allowed: false, 
+        reason: "Já tem plantão interno no sábado - não pode acumular externo",
+        rule: "INTERNO_EXTERNO_MESMO_DIA"
+      };
+    }
+    const hasSameShiftConflictRelax = internalSameDayRelax.some(a => a.shift_type === demand.shift);
+    if (hasSameShiftConflictRelax) {
+      return { 
+        allowed: false, 
+        reason: "Já tem plantão interno no mesmo turno - conflito de horário",
+        rule: "INTERNO_EXTERNO_MESMO_DIA"
+      };
+    }
   }
   
   // ═══════════════════════════════════════════════════════════
@@ -3931,6 +3959,59 @@ async function generateWeeklyScheduleWithAccumulator(
   }
   
   console.log(`\n   📊 Total de alocações após internos seg-sex: ${assignments.length}`);
+
+  // ═══════════════════════════════════════════════════════════
+  // ETAPA 8.11: PASSE FINAL CONSERVADOR - GARANTIR ALOCAÇÃO DE TODOS OS EXTERNOS
+  // Relaxa regras progressivamente para demandas externas não alocadas
+  // Ordem: 1) interno+externo seg-sex, 2) consecutivos, 3) gate 2-antes-3
+  // NUNCA relaxa: disponibilidade dia/turno, vínculo ao local, hard cap
+  // ═══════════════════════════════════════════════════════════
+  const preEmergencyUnallocated = possibleDemands.filter(d => 
+    !allocatedDemands.has(`${d.locationId}-${d.dateStr}-${d.shift}`)
+  );
+
+  if (preEmergencyUnallocated.length > 0) {
+    console.log(`\n🚑 ETAPA 8.11: PASSE FINAL CONSERVADOR - ${preEmergencyUnallocated.length} demandas externas ainda pendentes`);
+    
+    for (const demand of preEmergencyUnallocated) {
+      const demandKey = `${demand.locationId}-${demand.dateStr}-${demand.shift}`;
+      if (allocatedDemands.has(demandKey)) continue;
+      
+      // Coletar corretores elegíveis (já configurados no local via eligibleBrokerIds)
+      const eligibleBrokers = context.brokerQueue.filter(b => {
+        if (!demand.eligibleBrokerIds.includes(b.brokerId)) return false;
+        if (!b.availableWeekdays.includes(demand.dayOfWeek)) return false;
+        // Hard cap nunca relaxado
+        if (b.externalShiftCount >= MAX_EXTERNAL_SHIFTS_HARD_CAP) return false;
+        return true;
+      });
+      
+      // Ordenar por menos externos (distribuição justa)
+      eligibleBrokers.sort((a, b) => a.externalShiftCount - b.externalShiftCount);
+      
+      let allocated = false;
+      for (const broker of eligibleBrokers) {
+        // Verificar apenas regras invioláveis (construtora, etc.) mas relaxar consecutivos e gate
+        const checkResult = checkTrulyInviolableRulesWithRelaxation(broker, demand, context, true);
+        if (checkResult.allowed) {
+          allocateDemand(demand, broker, context);
+          allocatedDemands.add(demandKey);
+          relaxedAllocations.push({
+            demand: `${demand.locationName} ${demand.dateStr} ${demand.shift}`,
+            pass: 10,
+            reason: `PASSE FINAL: ${broker.brokerName} (regras de consecutivos/gate relaxadas)`
+          });
+          console.log(`   🚑 ${demand.locationName} ${demand.dateStr} ${demand.shift} → ${broker.brokerName} (passe final)`);
+          allocated = true;
+          break;
+        }
+      }
+      
+      if (!allocated) {
+        console.log(`   ❌ ${demand.locationName} ${demand.dateStr} ${demand.shift}: IMPOSSÍVEL alocar mesmo com relaxamento`);
+      }
+    }
+  }
 
   // Relatório de qualidade
   const finalUnallocated = possibleDemands.filter(d => 
