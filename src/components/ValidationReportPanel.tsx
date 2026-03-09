@@ -119,6 +119,17 @@ export function ValidationReportPanel({ result, onClose }: ValidationReportPanel
     });
   }, [allViolations, severityFilter, ruleFilter, searchBroker]);
 
+  // ─── Global violations (brokerId vazio) ──────────────────
+  const filteredGlobalViolations = useMemo(() => {
+    if (!result) return [];
+    return result.violations.filter(v => {
+      if (v.brokerId && v.brokerId !== "") return false;
+      if (severityFilter !== "all" && v.severity !== severityFilter) return false;
+      if (ruleFilter !== "all" && !v.rule.includes(ruleFilter)) return false;
+      return true;
+    });
+  }, [result, severityFilter, ruleFilter]);
+
   const filteredBrokerReports = useMemo(() => {
     if (!result) return [];
     let reports = [...result.brokerReports];
