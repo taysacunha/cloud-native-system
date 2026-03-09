@@ -487,9 +487,16 @@ export function validateGeneratedSchedule(
   // ═══════════════════════════════════════════════════════════
   // REGRA GLOBAL: DISTRIBUIÇÃO 2-ANTES-DE-3
   // Se um corretor tem 3+ externos enquanto outro tem menos de 2, é ERROR
+  // IMPORTANTE: Corretores que só trabalham em internos (0 externos e tem
+  // internos) são excluídos desta verificação — eles não estão cadastrados
+  // nos locais externos, então não faz sentido compará-los.
   // ═══════════════════════════════════════════════════════════
   const externalCountsByBroker = new Map<string, { name: string; count: number }>();
   for (const report of brokerReports) {
+    // Pular corretores que são exclusivamente internos (não têm nenhum externo e têm internos)
+    if (report.externalCount === 0 && report.internalCount > 0) {
+      continue;
+    }
     externalCountsByBroker.set(report.brokerId, { 
       name: report.brokerName, 
       count: report.externalCount 
