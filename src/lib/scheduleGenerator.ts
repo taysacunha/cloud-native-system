@@ -3977,15 +3977,10 @@ async function generateWeeklyScheduleWithAccumulator(
       const demandKey = `${demand.locationId}-${demand.dateStr}-${demand.shift}`;
       if (allocatedDemands.has(demandKey)) continue;
       
-      // Coletar todos os corretores elegíveis para este local
+      // Coletar corretores elegíveis (já configurados no local via eligibleBrokerIds)
       const eligibleBrokers = context.brokerQueue.filter(b => {
-        // Deve ter vínculo ao local
-        if (!b.eligibleLocationIds.includes(demand.locationId)) return false;
-        // Deve ter disponibilidade no dia
+        if (!demand.eligibleBrokerIds.includes(b.brokerId)) return false;
         if (!b.availableWeekdays.includes(demand.dayOfWeek)) return false;
-        // Deve ter disponibilidade no turno
-        if (demand.shift === "morning" && !b.availableMorning) return false;
-        if (demand.shift === "afternoon" && !b.availableAfternoon) return false;
         // Hard cap nunca relaxado
         if (b.externalShiftCount >= MAX_EXTERNAL_SHIFTS_HARD_CAP) return false;
         return true;
