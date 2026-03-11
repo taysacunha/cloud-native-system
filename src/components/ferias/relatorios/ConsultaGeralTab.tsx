@@ -108,7 +108,9 @@ export function ConsultaGeralTab() {
         const matchesStatus = selectedStatus === "_all_" || f.status === selectedStatus;
         const matchesTipo = selectedTipo === "_all_" || 
           (selectedTipo === "excecao" && f.is_excecao) || 
-          (selectedTipo === "normal" && !f.is_excecao);
+          (selectedTipo === "normal" && !f.is_excecao) ||
+          (selectedTipo === "1_periodo" && !f.quinzena2_inicio) ||
+          (selectedTipo === "2_periodos" && !!f.quinzena2_inicio);
         return matchesSearch && matchesSetor && matchesStatus && matchesTipo;
       })
       .sort((a, b) => {
