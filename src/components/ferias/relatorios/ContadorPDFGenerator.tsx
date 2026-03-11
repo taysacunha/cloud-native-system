@@ -150,7 +150,7 @@ export function ContadorPDFGenerator() {
           formatDate(f.quinzena1_inicio),
           formatDate(f.quinzena1_fim),
           f.quinzena2_inicio ? formatDate(f.quinzena2_inicio) : "-",
-          formatDate(f.quinzena2_fim),
+          f.quinzena2_fim ? formatDate(f.quinzena2_fim) : "-",
           diasVendidosContador.toString(),
           `${diasGozo1 + diasGozo2}`,
           f.status === "aprovada" ? "Aprovada" : f.status === "pendente" ? "Pendente" : f.status || "-",
