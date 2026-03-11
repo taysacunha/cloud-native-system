@@ -41,7 +41,6 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -54,22 +53,27 @@ import { cn } from "@/lib/utils";
 
 const feriasSchema = z.object({
   colaborador_id: z.string().min(1, "Colaborador é obrigatório"),
-  numero_periodos: z.enum(["1", "2"]).default("2"),
   quinzena1_inicio: z.string().min(1, "Data de início é obrigatória"),
   quinzena1_fim: z.string().min(1, "Data de fim é obrigatória"),
-  quinzena2_inicio: z.string().optional(),
-  quinzena2_fim: z.string().optional(),
-  gozo_diferente: z.boolean().default(false),
+  quinzena2_inicio: z.string().min(1, "Data de início do 2º período é obrigatória"),
+  quinzena2_fim: z.string().min(1, "Data de fim do 2º período é obrigatória"),
+  // Exclusive selector: "nenhum" | "vender" | "gozo_diferente"
+  opcao_adicional: z.enum(["nenhum", "vender", "gozo_diferente"]).default("nenhum"),
+  // Gozo diferente fields
   gozo_periodos: z.enum(["1", "2", "ambos"]).default("ambos"),
   gozo_quinzena1_inicio: z.string().optional(),
   gozo_quinzena1_fim: z.string().optional(),
   gozo_quinzena2_inicio: z.string().optional(),
   gozo_quinzena2_fim: z.string().optional(),
-  vender_dias: z.boolean().default(false),
+  // Venda fields
   dias_vendidos: z.number().min(0).max(30).optional(),
   quinzena_venda: z.number().min(1).max(2).optional(),
-  dias_periodo1: z.number().min(0).optional(),
-  dias_periodo2: z.number().min(0).optional(),
+  gozo_venda_periodos: z.enum(["1", "2"]).default("2"),
+  gozo_venda_q1_inicio: z.string().optional(),
+  gozo_venda_q1_fim: z.string().optional(),
+  gozo_venda_q2_inicio: z.string().optional(),
+  gozo_venda_q2_fim: z.string().optional(),
+  // Exceção
   is_excecao: z.boolean().default(false),
   excecao_motivo: z.string().optional(),
   excecao_justificativa: z.string().optional(),
@@ -102,22 +106,23 @@ export function FeriasDialog({ open, onOpenChange, ferias, anoReferencia, onSucc
     resolver: zodResolver(feriasSchema),
     defaultValues: {
       colaborador_id: "",
-      numero_periodos: "2",
       quinzena1_inicio: "",
       quinzena1_fim: "",
       quinzena2_inicio: "",
       quinzena2_fim: "",
-      gozo_diferente: false,
+      opcao_adicional: "nenhum",
       gozo_periodos: "ambos",
       gozo_quinzena1_inicio: "",
       gozo_quinzena1_fim: "",
       gozo_quinzena2_inicio: "",
       gozo_quinzena2_fim: "",
-      vender_dias: false,
       dias_vendidos: 0,
       quinzena_venda: 1,
-      dias_periodo1: 15,
-      dias_periodo2: 15,
+      gozo_venda_periodos: "2",
+      gozo_venda_q1_inicio: "",
+      gozo_venda_q1_fim: "",
+      gozo_venda_q2_inicio: "",
+      gozo_venda_q2_fim: "",
       is_excecao: false,
       excecao_motivo: "",
       excecao_justificativa: "",
@@ -138,7 +143,6 @@ export function FeriasDialog({ open, onOpenChange, ferias, anoReferencia, onSucc
     },
   });
 
-  // Fetch collaborators that already have vacations in the selected year
   const { data: colaboradoresComFerias = [] } = useQuery({
     queryKey: ["ferias-colaboradores-com-ferias", anoReferencia],
     queryFn: async () => {
@@ -155,7 +159,6 @@ export function FeriasDialog({ open, onOpenChange, ferias, anoReferencia, onSucc
     enabled: open,
   });
 
-  // Fetch collaborators that already have a form for the selected year
   const { data: colaboradoresComFormulario = [] } = useQuery({
     queryKey: ["ferias-colaboradores-com-formulario-dialog", anoReferencia],
     queryFn: async () => {
@@ -195,189 +198,175 @@ export function FeriasDialog({ open, onOpenChange, ferias, anoReferencia, onSucc
   });
 
   // ===== Watch declarations =====
-  const numeroPeriodos = form.watch("numero_periodos");
   const q1Inicio = form.watch("quinzena1_inicio");
   const q2Inicio = form.watch("quinzena2_inicio");
   const q1Fim = form.watch("quinzena1_fim");
   const q2Fim = form.watch("quinzena2_fim");
-  const gozoDiferente = form.watch("gozo_diferente");
-  const venderDias = form.watch("vender_dias");
+  const opcaoAdicional = form.watch("opcao_adicional");
   const isExcecao = form.watch("is_excecao");
   const diasVendidos = form.watch("dias_vendidos") || 0;
-  const quinzenaVenda = form.watch("quinzena_venda") || 1;
-  const diasPeriodo1 = form.watch("dias_periodo1") || 0;
-  const diasPeriodo2 = form.watch("dias_periodo2") || 0;
+  const gozoPeriodos = form.watch("gozo_periodos");
+  const gozoVendaPeriodos = form.watch("gozo_venda_periodos");
+  const gozoVendaQ1Inicio = form.watch("gozo_venda_q1_inicio");
+  const gozoVendaQ2Inicio = form.watch("gozo_venda_q2_inicio");
   const gozoQ1Inicio = form.watch("gozo_quinzena1_inicio");
   const gozoQ2Inicio = form.watch("gozo_quinzena2_inicio");
-  const gozoPeriodos = form.watch("gozo_periodos");
 
-  // Max days for sale based on type
+  const isVenda = opcaoAdicional === "vender";
+  const isGozoDiferente = opcaoAdicional === "gozo_diferente";
   const maxDiasVenda = isExcecao ? 30 : 10;
-
-  // When selling > 15 days, only 1 period makes sense
-  const forceSinglePeriod = venderDias && diasVendidos > 15;
-  const effectiveNumeroPeriodos = forceSinglePeriod ? "1" : numeroPeriodos;
-
-  // Compute remaining days per period
   const diasGozo = 30 - diasVendidos;
-  const restantesP1 = venderDias && diasVendidos >= 1 && diasVendidos <= 29
-    ? (effectiveNumeroPeriodos === "1" ? diasGozo : 15 - diasPeriodo1)
-    : (effectiveNumeroPeriodos === "1" ? 30 : 15);
-  const restantesP2 = effectiveNumeroPeriodos === "1" ? 0 : (venderDias && diasVendidos >= 1 && diasVendidos <= 29 ? 15 - diasPeriodo2 : 15);
 
-  // ===== Auto-calculate end dates when start dates or distribution changes =====
+  // Force single gozo period when > 15 days sold
+  const forceSingleGozo = isVenda && diasVendidos > 15;
+
+  useEffect(() => {
+    if (forceSingleGozo) {
+      form.setValue("gozo_venda_periodos", "1");
+    }
+  }, [forceSingleGozo]);
+
+  // ===== Auto-calculate official period end dates (always 15 days each) =====
   useEffect(() => {
     if (q1Inicio) {
       try {
-        const dias = restantesP1;
+        const endDate = addDays(parseISO(q1Inicio), 14);
+        form.setValue("quinzena1_fim", format(endDate, "yyyy-MM-dd"));
+      } catch { /* ignore */ }
+    }
+  }, [q1Inicio]);
+
+  useEffect(() => {
+    if (q2Inicio) {
+      try {
+        const endDate = addDays(parseISO(q2Inicio), 14);
+        form.setValue("quinzena2_fim", format(endDate, "yyyy-MM-dd"));
+      } catch { /* ignore */ }
+    }
+  }, [q2Inicio]);
+
+  // ===== Auto-calculate gozo venda end dates =====
+  useEffect(() => {
+    if (gozoVendaQ1Inicio && isVenda && diasVendidos >= 1) {
+      try {
+        let dias: number;
+        if (gozoVendaPeriodos === "1") {
+          dias = diasGozo;
+        } else {
+          // Split: first period gets half (ceil), second gets rest
+          dias = Math.ceil(diasGozo / 2);
+        }
         if (dias > 0) {
-          const endDate = addDays(parseISO(q1Inicio), dias - 1);
-          form.setValue("quinzena1_fim", format(endDate, "yyyy-MM-dd"));
+          const endDate = addDays(parseISO(gozoVendaQ1Inicio), dias - 1);
+          form.setValue("gozo_venda_q1_fim", format(endDate, "yyyy-MM-dd"));
         }
       } catch { /* ignore */ }
     }
-  }, [q1Inicio, venderDias, diasVendidos, diasPeriodo1, effectiveNumeroPeriodos]);
+  }, [gozoVendaQ1Inicio, isVenda, diasVendidos, gozoVendaPeriodos]);
 
   useEffect(() => {
-    if (q2Inicio && effectiveNumeroPeriodos === "2") {
+    if (gozoVendaQ2Inicio && isVenda && diasVendidos >= 1 && gozoVendaPeriodos === "2") {
       try {
-        const restantes = venderDias && diasVendidos >= 1 && diasVendidos <= 29 ? 15 - diasPeriodo2 : 15;
-        if (restantes > 0) {
-          const endDate = addDays(parseISO(q2Inicio), restantes - 1);
-          form.setValue("quinzena2_fim", format(endDate, "yyyy-MM-dd"));
+        const dias = Math.floor(diasGozo / 2);
+        if (dias > 0) {
+          const endDate = addDays(parseISO(gozoVendaQ2Inicio), dias - 1);
+          form.setValue("gozo_venda_q2_fim", format(endDate, "yyyy-MM-dd"));
         }
       } catch { /* ignore */ }
     }
-  }, [q2Inicio, venderDias, diasVendidos, diasPeriodo2, effectiveNumeroPeriodos]);
+  }, [gozoVendaQ2Inicio, isVenda, diasVendidos, gozoVendaPeriodos]);
 
-  // ===== Auto-calculate gozo end dates =====
+  // ===== Auto-calculate gozo diferente end dates =====
   useEffect(() => {
-    if (gozoQ1Inicio) {
+    if (gozoQ1Inicio && isGozoDiferente) {
       try {
-        let diasGozo = 14;
-        if (venderDias && diasVendidos >= 1 && diasVendidos <= 29) {
-          const vendidosP1 = form.getValues("dias_periodo1") || 0;
-          if (gozoPeriodos === "ambos") {
-            diasGozo = (30 - diasVendidos) - 1;
-          } else {
-            diasGozo = (15 - vendidosP1) - 1;
-          }
-        }
-        const endDate = addDays(parseISO(gozoQ1Inicio), Math.max(0, diasGozo));
+        const endDate = addDays(parseISO(gozoQ1Inicio), 14);
         form.setValue("gozo_quinzena1_fim", format(endDate, "yyyy-MM-dd"));
       } catch { /* ignore */ }
     }
-  }, [gozoQ1Inicio, venderDias, diasVendidos, gozoPeriodos, diasPeriodo1]);
+  }, [gozoQ1Inicio, isGozoDiferente]);
 
   useEffect(() => {
-    if (gozoQ2Inicio) {
+    if (gozoQ2Inicio && isGozoDiferente) {
       try {
-        let diasGozo = 14;
-        if (venderDias && diasVendidos >= 1 && diasVendidos <= 29) {
-          const vendidosP2 = form.getValues("dias_periodo2") || 0;
-          diasGozo = (15 - vendidosP2) - 1;
-        }
-        const endDate = addDays(parseISO(gozoQ2Inicio), Math.max(0, diasGozo));
+        const endDate = addDays(parseISO(gozoQ2Inicio), 14);
         form.setValue("gozo_quinzena2_fim", format(endDate, "yyyy-MM-dd"));
       } catch { /* ignore */ }
     }
-  }, [gozoQ2Inicio, venderDias, diasVendidos, diasPeriodo2]);
+  }, [gozoQ2Inicio, isGozoDiferente]);
 
   // ===== Auto-set excecao when > 10 days sold =====
   useEffect(() => {
-    if (venderDias && diasVendidos > 10) {
+    if (isVenda && diasVendidos > 10) {
       form.setValue("is_excecao", true);
       form.setValue("excecao_motivo", "venda_acima_limite");
     }
-  }, [venderDias, diasVendidos]);
+  }, [isVenda, diasVendidos]);
 
-  // ===== Force single period when > 15 days sold =====
+  // ===== Reset gozo diferente when switching away from excecao =====
   useEffect(() => {
-    if (forceSinglePeriod) {
-      form.setValue("numero_periodos", "1");
-      // Reset distribution - all sold from period 1
-      form.setValue("dias_periodo1", diasVendidos);
-      form.setValue("dias_periodo2", 0);
+    if (!isExcecao && opcaoAdicional === "gozo_diferente") {
+      form.setValue("opcao_adicional", "nenhum");
     }
-  }, [forceSinglePeriod, diasVendidos]);
-
-  // ===== Clear 2nd period when switching to 1 period =====
-  useEffect(() => {
-    if (effectiveNumeroPeriodos === "1") {
-      form.setValue("quinzena2_inicio", "");
-      form.setValue("quinzena2_fim", "");
-    }
-  }, [effectiveNumeroPeriodos]);
-
-  // ===== Mutual exclusivity: vender_dias vs gozo_diferente =====
-  useEffect(() => {
-    if (venderDias && gozoDiferente) {
-      form.setValue("gozo_diferente", false);
-      form.setValue("gozo_quinzena1_inicio", "");
-      form.setValue("gozo_quinzena1_fim", "");
-      form.setValue("gozo_quinzena2_inicio", "");
-      form.setValue("gozo_quinzena2_fim", "");
-    }
-  }, [venderDias]);
-
-  // ===== Auto-set default distribution when dias_vendidos changes =====
-  useEffect(() => {
-    if (venderDias && diasVendidos >= 1 && diasVendidos <= 29 && !forceSinglePeriod) {
-      const currentP1 = form.getValues("dias_periodo1") || 0;
-      const currentP2 = form.getValues("dias_periodo2") || 0;
-      if (currentP1 + currentP2 !== diasVendidos) {
-        const qv = form.getValues("quinzena_venda") || 1;
-        if (qv === 1) {
-          const vendidosP1 = Math.min(diasVendidos, 15);
-          form.setValue("dias_periodo1", vendidosP1);
-          form.setValue("dias_periodo2", Math.min(diasVendidos - vendidosP1, 15));
-        } else {
-          const vendidosP2 = Math.min(diasVendidos, 15);
-          form.setValue("dias_periodo2", vendidosP2);
-          form.setValue("dias_periodo1", Math.min(diasVendidos - vendidosP2, 15));
-        }
-      }
-    }
-  }, [diasVendidos, venderDias, forceSinglePeriod]);
-
-  // ===== Reset gozo diferente fields when switching to Padrão =====
-  useEffect(() => {
-    if (!isExcecao) {
-      form.setValue("gozo_diferente", false);
-      form.setValue("gozo_quinzena1_inicio", "");
-      form.setValue("gozo_quinzena1_fim", "");
-      form.setValue("gozo_quinzena2_inicio", "");
-      form.setValue("gozo_quinzena2_fim", "");
-      // Limit dias_vendidos to 10 for Padrão
-      if (venderDias && diasVendidos > 10) {
-        form.setValue("dias_vendidos", 10);
-      }
+    if (!isExcecao && isVenda && diasVendidos > 10) {
+      form.setValue("dias_vendidos", 10);
     }
   }, [isExcecao]);
+
+  // ===== Clear fields when opcao_adicional changes =====
+  useEffect(() => {
+    if (opcaoAdicional === "nenhum") {
+      form.setValue("gozo_quinzena1_inicio", "");
+      form.setValue("gozo_quinzena1_fim", "");
+      form.setValue("gozo_quinzena2_inicio", "");
+      form.setValue("gozo_quinzena2_fim", "");
+      form.setValue("dias_vendidos", 0);
+      form.setValue("gozo_venda_q1_inicio", "");
+      form.setValue("gozo_venda_q1_fim", "");
+      form.setValue("gozo_venda_q2_inicio", "");
+      form.setValue("gozo_venda_q2_fim", "");
+    } else if (opcaoAdicional === "vender") {
+      form.setValue("gozo_quinzena1_inicio", "");
+      form.setValue("gozo_quinzena1_fim", "");
+      form.setValue("gozo_quinzena2_inicio", "");
+      form.setValue("gozo_quinzena2_fim", "");
+    } else if (opcaoAdicional === "gozo_diferente") {
+      form.setValue("dias_vendidos", 0);
+      form.setValue("gozo_venda_q1_inicio", "");
+      form.setValue("gozo_venda_q1_fim", "");
+      form.setValue("gozo_venda_q2_inicio", "");
+      form.setValue("gozo_venda_q2_fim", "");
+    }
+  }, [opcaoAdicional]);
 
   // Reset form when ferias changes
   useEffect(() => {
     if (ferias) {
-      const diasVend = ferias.dias_vendidos || 0;
-      const hasTwoPeriods = !!ferias.quinzena2_inicio;
+      const hasVenda = ferias.vender_dias && (ferias.dias_vendidos || 0) > 0;
+      const hasGozo = ferias.gozo_diferente;
+      let opcao: "nenhum" | "vender" | "gozo_diferente" = "nenhum";
+      if (hasVenda) opcao = "vender";
+      else if (hasGozo) opcao = "gozo_diferente";
+
       form.reset({
         colaborador_id: ferias.colaborador_id || "",
-        numero_periodos: hasTwoPeriods ? "2" : "1",
         quinzena1_inicio: ferias.quinzena1_inicio || "",
         quinzena1_fim: ferias.quinzena1_fim || "",
         quinzena2_inicio: ferias.quinzena2_inicio || "",
         quinzena2_fim: ferias.quinzena2_fim || "",
-        gozo_diferente: ferias.gozo_diferente || false,
+        opcao_adicional: opcao,
         gozo_periodos: ferias.gozo_quinzena1_inicio && ferias.gozo_quinzena2_inicio ? "ambos" : ferias.gozo_quinzena1_inicio ? "1" : ferias.gozo_quinzena2_inicio ? "2" : "ambos",
-        gozo_quinzena1_inicio: ferias.gozo_quinzena1_inicio || "",
-        gozo_quinzena1_fim: ferias.gozo_quinzena1_fim || "",
-        gozo_quinzena2_inicio: ferias.gozo_quinzena2_inicio || "",
-        gozo_quinzena2_fim: ferias.gozo_quinzena2_fim || "",
-        vender_dias: ferias.vender_dias || false,
-        dias_vendidos: diasVend,
+        gozo_quinzena1_inicio: hasGozo ? (ferias.gozo_quinzena1_inicio || "") : "",
+        gozo_quinzena1_fim: hasGozo ? (ferias.gozo_quinzena1_fim || "") : "",
+        gozo_quinzena2_inicio: hasGozo ? (ferias.gozo_quinzena2_inicio || "") : "",
+        gozo_quinzena2_fim: hasGozo ? (ferias.gozo_quinzena2_fim || "") : "",
+        dias_vendidos: ferias.dias_vendidos || 0,
         quinzena_venda: ferias.quinzena_venda || 1,
-        dias_periodo1: ferias.dias_periodo1 ?? Math.min(diasVend, 15),
-        dias_periodo2: ferias.dias_periodo2 ?? Math.max(0, diasVend - Math.min(diasVend, 15)),
+        gozo_venda_periodos: hasVenda && ferias.gozo_quinzena2_inicio ? "2" : "1",
+        gozo_venda_q1_inicio: hasVenda ? (ferias.gozo_quinzena1_inicio || "") : "",
+        gozo_venda_q1_fim: hasVenda ? (ferias.gozo_quinzena1_fim || "") : "",
+        gozo_venda_q2_inicio: hasVenda ? (ferias.gozo_quinzena2_inicio || "") : "",
+        gozo_venda_q2_fim: hasVenda ? (ferias.gozo_quinzena2_fim || "") : "",
         is_excecao: ferias.is_excecao || false,
         excecao_motivo: ferias.excecao_motivo || "",
         excecao_justificativa: ferias.excecao_justificativa || "",
@@ -385,22 +374,23 @@ export function FeriasDialog({ open, onOpenChange, ferias, anoReferencia, onSucc
     } else {
       form.reset({
         colaborador_id: "",
-        numero_periodos: "2",
         quinzena1_inicio: "",
         quinzena1_fim: "",
         quinzena2_inicio: "",
         quinzena2_fim: "",
-        gozo_diferente: false,
+        opcao_adicional: "nenhum",
         gozo_periodos: "ambos",
         gozo_quinzena1_inicio: "",
         gozo_quinzena1_fim: "",
         gozo_quinzena2_inicio: "",
         gozo_quinzena2_fim: "",
-        vender_dias: false,
         dias_vendidos: 0,
         quinzena_venda: 1,
-        dias_periodo1: 15,
-        dias_periodo2: 15,
+        gozo_venda_periodos: "2",
+        gozo_venda_q1_inicio: "",
+        gozo_venda_q1_fim: "",
+        gozo_venda_q2_inicio: "",
+        gozo_venda_q2_fim: "",
         is_excecao: false,
         excecao_motivo: "",
         excecao_justificativa: "",
@@ -409,7 +399,7 @@ export function FeriasDialog({ open, onOpenChange, ferias, anoReferencia, onSucc
     setConflicts([]);
   }, [ferias, open]);
 
-  // Check conflicts (including substitute sectors)
+  // Check conflicts
   const checkConflicts = async (data: FeriasFormData) => {
     if (!data.colaborador_id) return;
     setCheckingConflicts(true);
@@ -444,38 +434,29 @@ export function FeriasDialog({ open, onOpenChange, ferias, anoReferencia, onSucc
           .in("status", ["pendente", "aprovada", "em_gozo"]);
 
         if (existingFerias) {
-          const q1Start = parseISO(data.gozo_diferente && data.gozo_quinzena1_inicio ? data.gozo_quinzena1_inicio : data.quinzena1_inicio);
-          const q1End = parseISO(data.gozo_diferente && data.gozo_quinzena1_fim ? data.gozo_quinzena1_fim : data.quinzena1_fim);
-          const hasQ2 = data.numero_periodos === "2" && data.quinzena2_inicio;
-          const q2Start = hasQ2 ? parseISO(data.gozo_diferente && data.gozo_quinzena2_inicio ? data.gozo_quinzena2_inicio : data.quinzena2_inicio!) : null;
-          const q2End = hasQ2 ? parseISO(data.gozo_diferente && data.gozo_quinzena2_fim ? data.gozo_quinzena2_fim : data.quinzena2_fim!) : null;
+          const q1Start = parseISO(data.quinzena1_inicio);
+          const q1End = parseISO(data.quinzena1_fim);
+          const q2Start = parseISO(data.quinzena2_inicio);
+          const q2End = parseISO(data.quinzena2_fim);
 
           for (const ef of existingFerias) {
             if (ferias && ef.id === ferias.id) continue;
-            const efQ1Start = parseISO(ef.gozo_diferente && ef.gozo_quinzena1_inicio ? ef.gozo_quinzena1_inicio : ef.quinzena1_inicio);
-            const efQ1End = parseISO(ef.gozo_diferente && ef.gozo_quinzena1_fim ? ef.gozo_quinzena1_fim : ef.quinzena1_fim);
-            const efHasQ2 = ef.quinzena2_inicio;
-            const efQ2Start = efHasQ2 ? parseISO(ef.gozo_diferente && ef.gozo_quinzena2_inicio ? ef.gozo_quinzena2_inicio : ef.quinzena2_inicio) : null;
-            const efQ2End = efHasQ2 ? parseISO(ef.gozo_diferente && ef.gozo_quinzena2_fim ? ef.gozo_quinzena2_fim : ef.quinzena2_fim) : null;
+            const efQ1Start = parseISO(ef.quinzena1_inicio);
+            const efQ1End = parseISO(ef.quinzena1_fim);
+            const efQ2Start = ef.quinzena2_inicio ? parseISO(ef.quinzena2_inicio) : null;
+            const efQ2End = ef.quinzena2_fim ? parseISO(ef.quinzena2_fim) : null;
 
-            let q1Overlap = false;
-            let q2Overlap = false;
-
-            // Check q1 overlap with ef q1
-            q1Overlap = (q1Start <= efQ1End && q1End >= efQ1Start);
-            // Check q1 overlap with ef q2
+            let overlap = false;
+            overlap = (q1Start <= efQ1End && q1End >= efQ1Start);
             if (efQ2Start && efQ2End) {
-              q1Overlap = q1Overlap || (q1Start <= efQ2End && q1End >= efQ2Start);
+              overlap = overlap || (q1Start <= efQ2End && q1End >= efQ2Start);
             }
-            // Check q2 overlap
-            if (q2Start && q2End) {
-              q2Overlap = (q2Start <= efQ1End && q2End >= efQ1Start);
-              if (efQ2Start && efQ2End) {
-                q2Overlap = q2Overlap || (q2Start <= efQ2End && q2End >= efQ2Start);
-              }
+            overlap = overlap || (q2Start <= efQ1End && q2End >= efQ1Start);
+            if (efQ2Start && efQ2End) {
+              overlap = overlap || (q2Start <= efQ2End && q2End >= efQ2Start);
             }
 
-            if (q1Overlap || q2Overlap) {
+            if (overlap) {
               const isSubstitute = (ef.colaborador as any)?.setor_titular_id !== selectedColab.setor_titular_id;
               foundConflicts.push({
                 colaborador_nome: (ef.colaborador as any)?.nome || "Desconhecido",
@@ -504,15 +485,15 @@ export function FeriasDialog({ open, onOpenChange, ferias, anoReferencia, onSucc
             .in("status", ["pendente", "aprovada", "em_gozo"]);
 
           if (relatedFerias) {
-            const q1Start = parseISO(data.gozo_diferente && data.gozo_quinzena1_inicio ? data.gozo_quinzena1_inicio : data.quinzena1_inicio);
-            const q1End = parseISO(data.gozo_diferente && data.gozo_quinzena1_fim ? data.gozo_quinzena1_fim : data.quinzena1_fim);
+            const q1Start = parseISO(data.quinzena1_inicio);
+            const q1End = parseISO(data.quinzena1_fim);
 
             for (const rf of relatedFerias) {
               if (ferias && rf.id === ferias.id) continue;
-              const rfQ1Start = parseISO(rf.gozo_diferente && rf.gozo_quinzena1_inicio ? rf.gozo_quinzena1_inicio : rf.quinzena1_inicio);
-              const rfQ1End = parseISO(rf.gozo_diferente && rf.gozo_quinzena1_fim ? rf.gozo_quinzena1_fim : rf.quinzena1_fim);
-              const overlap = (q1Start <= rfQ1End && q1End >= rfQ1Start);
-              if (!overlap) {
+              const rfQ1Start = parseISO(rf.quinzena1_inicio);
+              const rfQ1End = parseISO(rf.quinzena1_fim);
+              const noOverlap = !(q1Start <= rfQ1End && q1End >= rfQ1Start);
+              if (noOverlap) {
                 foundConflicts.push({
                   colaborador_nome: relatedName || "Familiar",
                   tipo: "Familiar sem coincidência",
@@ -532,7 +513,7 @@ export function FeriasDialog({ open, onOpenChange, ferias, anoReferencia, onSucc
     }
   };
 
-  const watchedFields = form.watch(["colaborador_id", "quinzena1_inicio", "quinzena1_fim", "quinzena2_inicio", "quinzena2_fim", "gozo_diferente", "gozo_quinzena1_inicio", "gozo_quinzena1_fim"]);
+  const watchedFields = form.watch(["colaborador_id", "quinzena1_inicio", "quinzena1_fim", "quinzena2_inicio", "quinzena2_fim"]);
   
   useEffect(() => {
     const values = form.getValues();
@@ -567,30 +548,35 @@ export function FeriasDialog({ open, onOpenChange, ferias, anoReferencia, onSucc
   // Save mutation
   const mutation = useMutation({
     mutationFn: async (data: FeriasFormData) => {
-      const dv = data.dias_vendidos || 0;
-      const isSingle = data.numero_periodos === "1" || (data.vender_dias && dv > 15);
-
       let gozoQ1Inicio = null;
       let gozoQ1Fim = null;
       let gozoQ2Inicio = null;
       let gozoQ2Fim = null;
+      let venderDias = false;
+      let diasVend = 0;
+      let quinzenaVenda: number | null = null;
+      let gozoDiferente = false;
 
-      if (data.gozo_diferente) {
-        const hasSale = data.vender_dias && dv >= 1 && dv <= 15;
-        const isSingleBlock = hasSale && data.gozo_periodos === "ambos";
-
-        if (isSingleBlock) {
+      if (data.opcao_adicional === "vender" && (data.dias_vendidos || 0) > 0) {
+        venderDias = true;
+        diasVend = data.dias_vendidos || 0;
+        quinzenaVenda = data.quinzena_venda || 1;
+        // Save gozo dates from venda flow
+        gozoQ1Inicio = data.gozo_venda_q1_inicio || null;
+        gozoQ1Fim = data.gozo_venda_q1_fim || null;
+        if (data.gozo_venda_periodos === "2") {
+          gozoQ2Inicio = data.gozo_venda_q2_inicio || null;
+          gozoQ2Fim = data.gozo_venda_q2_fim || null;
+        }
+      } else if (data.opcao_adicional === "gozo_diferente") {
+        gozoDiferente = true;
+        if (data.gozo_periodos === "1" || data.gozo_periodos === "ambos") {
           gozoQ1Inicio = data.gozo_quinzena1_inicio || null;
           gozoQ1Fim = data.gozo_quinzena1_fim || null;
-        } else {
-          if (data.gozo_periodos === "1" || data.gozo_periodos === "ambos") {
-            gozoQ1Inicio = data.gozo_quinzena1_inicio || null;
-            gozoQ1Fim = data.gozo_quinzena1_fim || null;
-          }
-          if (data.gozo_periodos === "2" || data.gozo_periodos === "ambos") {
-            gozoQ2Inicio = data.gozo_quinzena2_inicio || null;
-            gozoQ2Fim = data.gozo_quinzena2_fim || null;
-          }
+        }
+        if (data.gozo_periodos === "2" || data.gozo_periodos === "ambos") {
+          gozoQ2Inicio = data.gozo_quinzena2_inicio || null;
+          gozoQ2Fim = data.gozo_quinzena2_fim || null;
         }
       }
 
@@ -598,16 +584,16 @@ export function FeriasDialog({ open, onOpenChange, ferias, anoReferencia, onSucc
         colaborador_id: data.colaborador_id,
         quinzena1_inicio: data.quinzena1_inicio,
         quinzena1_fim: data.quinzena1_fim,
-        quinzena2_inicio: isSingle ? null : (data.quinzena2_inicio || null),
-        quinzena2_fim: isSingle ? null : (data.quinzena2_fim || null),
-        gozo_diferente: data.gozo_diferente,
+        quinzena2_inicio: data.quinzena2_inicio,
+        quinzena2_fim: data.quinzena2_fim,
+        gozo_diferente: gozoDiferente,
         gozo_quinzena1_inicio: gozoQ1Inicio,
         gozo_quinzena1_fim: gozoQ1Fim,
         gozo_quinzena2_inicio: gozoQ2Inicio,
         gozo_quinzena2_fim: gozoQ2Fim,
-        vender_dias: data.vender_dias,
-        dias_vendidos: data.vender_dias ? data.dias_vendidos : null,
-        quinzena_venda: data.vender_dias ? data.quinzena_venda : null,
+        vender_dias: venderDias,
+        dias_vendidos: venderDias ? diasVend : null,
+        quinzena_venda: venderDias ? quinzenaVenda : null,
         status: isEditing ? ferias.status : "aprovada",
         is_excecao: data.is_excecao,
         excecao_motivo: data.is_excecao ? data.excecao_motivo : null,
@@ -640,26 +626,23 @@ export function FeriasDialog({ open, onOpenChange, ferias, anoReferencia, onSucc
     let requiresException = false;
     let exceptionReason = "";
 
-    const q1Start = data.gozo_diferente && data.gozo_quinzena1_inicio ? parseISO(data.gozo_quinzena1_inicio) : parseISO(data.quinzena1_inicio);
+    const q1Start = parseISO(data.quinzena1_inicio);
     const q1Month = q1Start.getMonth() + 1;
-
     if (q1Month === 1 || q1Month === 12) {
       requiresException = true;
       exceptionReason = "mes_bloqueado";
       errors.push("Férias em janeiro ou dezembro requerem exceção");
     }
 
-    if (data.numero_periodos === "2" && data.quinzena2_inicio) {
-      const q2Start = data.gozo_diferente && data.gozo_quinzena2_inicio ? parseISO(data.gozo_quinzena2_inicio) : parseISO(data.quinzena2_inicio);
-      const q2Month = q2Start.getMonth() + 1;
-      if (q2Month === 1 || q2Month === 12) {
-        requiresException = true;
-        exceptionReason = "mes_bloqueado";
-        errors.push("Férias em janeiro ou dezembro requerem exceção");
-      }
+    const q2Start = parseISO(data.quinzena2_inicio);
+    const q2Month = q2Start.getMonth() + 1;
+    if (q2Month === 1 || q2Month === 12) {
+      requiresException = true;
+      exceptionReason = "mes_bloqueado";
+      errors.push("Férias em janeiro ou dezembro requerem exceção");
     }
 
-    if (data.vender_dias && data.dias_vendidos && data.dias_vendidos > 10) {
+    if (data.opcao_adicional === "vender" && data.dias_vendidos && data.dias_vendidos > 10) {
       requiresException = true;
       exceptionReason = "venda_acima_limite";
       errors.push("Venda acima de 10 dias requer exceção");
@@ -681,8 +664,7 @@ export function FeriasDialog({ open, onOpenChange, ferias, anoReferencia, onSucc
       toast.error("Preencha o motivo e justificativa da exceção");
       return;
     }
-    // Validate 2nd period is filled when 2 periods selected and no large sale
-    if (effectiveNumeroPeriodos === "2" && !data.quinzena2_inicio) {
+    if (!data.quinzena2_inicio) {
       toast.error("Preencha a data de início do 2º período");
       return;
     }
@@ -764,7 +746,7 @@ export function FeriasDialog({ open, onOpenChange, ferias, anoReferencia, onSucc
 
             <Separator />
 
-            {/* ===== SEÇÃO 2: Colaborador e Períodos Oficiais ===== */}
+            {/* ===== SEÇÃO 2: Colaborador e Períodos Oficiais (SEMPRE 2) ===== */}
             <div className="space-y-4">
               {/* Combobox Colaborador */}
               <FormField
@@ -822,7 +804,7 @@ export function FeriasDialog({ open, onOpenChange, ferias, anoReferencia, onSucc
                         const q2i = ff.gozo_diferente && ff.gozo_quinzena2_inicio ? ff.gozo_quinzena2_inicio : ff.quinzena2_inicio;
                         const q2f = ff.gozo_diferente && ff.gozo_quinzena2_fim ? ff.gozo_quinzena2_fim : ff.quinzena2_fim;
                         return (
-                          <li key={i}>1º: {formatDateBR(q1i)} a {formatDateBR(q1f)}{q2i ? ` | 2º: ${formatDateBR(q2i)} a ${formatDateBR(q2f)}` : ""}</li>
+                          <li key={i}>1º: {formatDateBR(q1i)} a {formatDateBR(q1f)}{q2i ? ` | 2º: ${formatDateBR(q2i)} a ${formatDateBR(q2f!)}` : ""}</li>
                         );
                       })}
                     </ul>
@@ -853,50 +835,10 @@ export function FeriasDialog({ open, onOpenChange, ferias, anoReferencia, onSucc
                 </Card>
               )}
 
-              {/* Número de períodos */}
-              <div className="space-y-2">
-                <p className="text-sm font-medium">Número de períodos</p>
-                {forceSinglePeriod ? (
-                  <Alert className="border-primary/30 bg-primary/5">
-                    <Info className="h-4 w-4 text-primary" />
-                    <AlertDescription className="text-sm">
-                      Venda de {diasVendidos} dias: apenas 1 período de gozo ({diasGozo} dias restantes).
-                    </AlertDescription>
-                  </Alert>
-                ) : (
-                  <FormField
-                    control={form.control}
-                    name="numero_periodos"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormControl>
-                          <RadioGroup
-                            value={field.value}
-                            onValueChange={field.onChange}
-                            className="flex gap-4"
-                          >
-                            <div className="flex items-center space-x-2">
-                              <RadioGroupItem value="1" id="periodo-1" />
-                              <Label htmlFor="periodo-1">1 período</Label>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <RadioGroupItem value="2" id="periodo-2" />
-                              <Label htmlFor="periodo-2">2 períodos</Label>
-                            </div>
-                          </RadioGroup>
-                        </FormControl>
-                      </FormItem>
-                    )}
-                  />
-                )}
-              </div>
-
-              {/* 1º Período */}
+              {/* 1º Período Oficial - always 15 days */}
               <Card>
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-sm">
-                    {effectiveNumeroPeriodos === "1" ? `Período de Gozo (${restantesP1} dias)` : `1º Período ${venderDias && diasVendidos >= 1 && diasVendidos <= 29 && restantesP1 > 0 ? `(${restantesP1} dias)` : "(15 dias)"}`}
-                  </CardTitle>
+                  <CardTitle className="text-sm">1º Período (15 dias)</CardTitle>
                 </CardHeader>
                 <CardContent className="grid grid-cols-2 gap-4">
                   <FormField
@@ -914,94 +856,76 @@ export function FeriasDialog({ open, onOpenChange, ferias, anoReferencia, onSucc
                     <FormLabel>Data de Fim (automático)</FormLabel>
                     <Input type="date" value={q1Fim} readOnly className="bg-muted cursor-not-allowed" />
                     {q1Inicio && q1Fim && (
-                      <p className="text-xs text-muted-foreground mt-1">{restantesP1} dias a partir de {formatDateBR(q1Inicio)}</p>
+                      <p className="text-xs text-muted-foreground mt-1">15 dias a partir de {formatDateBR(q1Inicio)}</p>
                     )}
                   </FormItem>
                 </CardContent>
               </Card>
 
-              {/* 2º Período - show only when 2 periods selected and remaining days > 0 */}
-              {effectiveNumeroPeriodos === "2" && restantesP2 > 0 && (
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-sm">2º Período {venderDias && diasVendidos >= 1 && diasVendidos <= 29 ? `(${restantesP2} dias)` : "(15 dias)"}</CardTitle>
-                  </CardHeader>
-                  <CardContent className="grid grid-cols-2 gap-4">
-                    <FormField
-                      control={form.control}
-                      name="quinzena2_inicio"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Data de Início *</FormLabel>
-                          <FormControl><Input type="date" {...field} /></FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormItem>
-                      <FormLabel>Data de Fim (automático)</FormLabel>
-                      <Input type="date" value={q2Fim} readOnly className="bg-muted cursor-not-allowed" />
-                      {q2Inicio && q2Fim && (
-                        <p className="text-xs text-muted-foreground mt-1">{restantesP2} dias a partir de {formatDateBR(q2Inicio)}</p>
-                      )}
-                    </FormItem>
-                  </CardContent>
-                </Card>
-              )}
+              {/* 2º Período Oficial - always 15 days */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm">2º Período (15 dias)</CardTitle>
+                </CardHeader>
+                <CardContent className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="quinzena2_inicio"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Data de Início *</FormLabel>
+                        <FormControl><Input type="date" {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormItem>
+                    <FormLabel>Data de Fim (automático)</FormLabel>
+                    <Input type="date" value={q2Fim} readOnly className="bg-muted cursor-not-allowed" />
+                    {q2Inicio && q2Fim && (
+                      <p className="text-xs text-muted-foreground mt-1">15 dias a partir de {formatDateBR(q2Inicio)}</p>
+                    )}
+                  </FormItem>
+                </CardContent>
+              </Card>
             </div>
 
             <Separator />
 
-            {/* ===== SEÇÃO 3: Venda de Dias ===== */}
+            {/* ===== SEÇÃO 3: Seletor Exclusivo (RadioGroup) ===== */}
             <div className="space-y-4">
-              <FormField
-                control={form.control}
-                name="vender_dias"
-                render={({ field }) => (
-                  <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-                    <FormControl>
-                      <Checkbox
-                        checked={field.value}
-                        onCheckedChange={(checked) => {
-                          field.onChange(checked);
-                          if (checked) {
-                            // Mutual exclusivity: uncheck gozo_diferente
-                            form.setValue("gozo_diferente", false);
-                            form.setValue("gozo_quinzena1_inicio", "");
-                            form.setValue("gozo_quinzena1_fim", "");
-                            form.setValue("gozo_quinzena2_inicio", "");
-                            form.setValue("gozo_quinzena2_fim", "");
-                          }
-                        }}
-                      />
-                    </FormControl>
-                    <div className="space-y-1 leading-none">
-                      <FormLabel className="text-base font-medium">Vender dias de férias</FormLabel>
-                      {gozoDiferente && <p className="text-xs text-muted-foreground">Não é possível vender dias e ter gozo em datas diferentes ao mesmo tempo.</p>}
-                    </div>
-                  </FormItem>
+              <p className="text-sm font-medium">Opções adicionais</p>
+              <RadioGroup
+                value={opcaoAdicional}
+                onValueChange={(v) => form.setValue("opcao_adicional", v as any)}
+                className="flex flex-col gap-3"
+              >
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="nenhum" id="opcao-nenhum" />
+                  <Label htmlFor="opcao-nenhum">Nenhum</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="vender" id="opcao-vender" />
+                  <Label htmlFor="opcao-vender">Vender dias de férias</Label>
+                </div>
+                {isExcecao && (
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="gozo_diferente" id="opcao-gozo" />
+                    <Label htmlFor="opcao-gozo">Gozo em datas diferentes</Label>
+                  </div>
                 )}
-              />
+              </RadioGroup>
 
-              {venderDias && (
-                <div className="space-y-4 pl-7">
-                  {/* Referência dos períodos cadastrados */}
-                  {q1Inicio && q1Fim && (
-                    <div className="text-xs text-muted-foreground bg-muted/50 p-2 rounded-md space-y-0.5">
-                      <p>📋 Períodos cadastrados:</p>
-                      <p>1º: {formatDateBR(q1Inicio)} a {formatDateBR(q1Fim)} ({restantesP1} dias)</p>
-                      {effectiveNumeroPeriodos === "2" && restantesP2 > 0 && q2Inicio && q2Fim && (
-                        <p>2º: {formatDateBR(q2Inicio)} a {formatDateBR(q2Fim)} ({restantesP2} dias)</p>
-                      )}
-                    </div>
-                  )}
-
+              {/* ===== Venda de Dias ===== */}
+              {isVenda && (
+                <div className="space-y-4 pl-7 border-l-2 border-primary/20">
                   {/* Days input */}
                   <FormField control={form.control} name="dias_vendidos" render={({ field }) => (
                     <FormItem>
                       <FormLabel>Quantidade de dias a vender {!isExcecao && "(máx. 10)"}</FormLabel>
                       <FormControl>
                         <Input type="number" min={1} max={maxDiasVenda} {...field}
+                          value={field.value ?? 0}
                           onChange={(e) => field.onChange(Math.min(maxDiasVenda, Math.max(0, parseInt(e.target.value) || 0)))}
                         />
                       </FormControl>
@@ -1009,110 +933,98 @@ export function FeriasDialog({ open, onOpenChange, ferias, anoReferencia, onSucc
                     </FormItem>
                   )} />
 
-                  {/* Distribution for 1-15 days (only when 2 periods) */}
-                  {diasVendidos >= 1 && diasVendidos <= 15 && effectiveNumeroPeriodos === "2" && (
-                    <Card className="border-muted">
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-sm">Distribuição da venda ({diasVendidos} dias)</CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-4">
-                        <div className="grid grid-cols-2 gap-4">
-                          <FormField control={form.control} name="dias_periodo1" render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Vendidos do 1º Período</FormLabel>
-                              <FormControl>
-                                <Input type="number" min={0} max={Math.min(diasVendidos, 15)} {...field}
-                                  value={field.value ?? 0}
-                                  onChange={(e) => {
-                                    const v = Math.min(Math.min(diasVendidos, 15), Math.max(0, parseInt(e.target.value) || 0));
-                                    field.onChange(v);
-                                    form.setValue("dias_periodo2", Math.min(diasVendidos - v, 15));
-                                    form.trigger(["dias_periodo1", "dias_periodo2"]);
-                                  }}
-                                />
-                              </FormControl>
-                              <p className="text-xs text-muted-foreground">Restam {15 - (field.value ?? 0)} dias</p>
-                              <FormMessage />
-                            </FormItem>
-                          )} />
-                          <FormField control={form.control} name="dias_periodo2" render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Vendidos do 2º Período</FormLabel>
-                              <FormControl>
-                                <Input type="number" min={0} max={Math.min(diasVendidos, 15)} {...field}
-                                  value={field.value ?? 0}
-                                  onChange={(e) => {
-                                    const v = Math.min(Math.min(diasVendidos, 15), Math.max(0, parseInt(e.target.value) || 0));
-                                    field.onChange(v);
-                                    form.setValue("dias_periodo1", Math.min(diasVendidos - v, 15));
-                                    form.trigger(["dias_periodo1", "dias_periodo2"]);
-                                  }}
-                                />
-                              </FormControl>
-                              <p className="text-xs text-muted-foreground">Restam {15 - (field.value ?? 0)} dias</p>
-                              <FormMessage />
-                            </FormItem>
-                          )} />
+                  {diasVendidos >= 1 && diasVendidos <= 29 && (
+                    <>
+                      {/* Inform which period the sale is on */}
+                      <FormField control={form.control} name="quinzena_venda" render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Período da venda</FormLabel>
+                          <Select onValueChange={(v) => field.onChange(parseInt(v))} value={String(field.value || 1)}>
+                            <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                            <SelectContent>
+                              <SelectItem value="1">1º Período</SelectItem>
+                              <SelectItem value="2">2º Período</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )} />
+
+                      {/* Gozo periods selector */}
+                      {!forceSingleGozo && (
+                        <div className="space-y-2">
+                          <p className="text-sm font-medium">Períodos de gozo</p>
+                          <RadioGroup
+                            value={gozoVendaPeriodos}
+                            onValueChange={(v) => form.setValue("gozo_venda_periodos", v as "1" | "2")}
+                            className="flex gap-4"
+                          >
+                            <div className="flex items-center space-x-2">
+                              <RadioGroupItem value="1" id="gozo-1" />
+                              <Label htmlFor="gozo-1">1 período de gozo</Label>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <RadioGroupItem value="2" id="gozo-2" />
+                              <Label htmlFor="gozo-2">2 períodos de gozo</Label>
+                            </div>
+                          </RadioGroup>
                         </div>
-                        {(diasPeriodo1 + diasPeriodo2) !== diasVendidos && (
-                          <p className="text-xs text-destructive">A soma deve ser igual a {diasVendidos} ({diasPeriodo1} + {diasPeriodo2} = {diasPeriodo1 + diasPeriodo2})</p>
-                        )}
-                      </CardContent>
-                    </Card>
-                  )}
+                      )}
 
-                  {/* Inline gozo date cards per period (for <= 15 days, 2 periods) */}
-                  {diasVendidos >= 1 && diasVendidos <= 15 && effectiveNumeroPeriodos === "2" && (diasPeriodo1 + diasPeriodo2) === diasVendidos && (
-                    <div className="space-y-3">
-                      {(15 - diasPeriodo1) > 0 && (
+                      {forceSingleGozo && (
+                        <Alert className="border-primary/30 bg-primary/5">
+                          <Info className="h-4 w-4 text-primary" />
+                          <AlertDescription className="text-sm">
+                            Venda de {diasVendidos} dias: apenas 1 período de gozo ({diasGozo} dias restantes).
+                          </AlertDescription>
+                        </Alert>
+                      )}
+
+                      {/* Gozo date cards */}
+                      <Card className="border-primary/20 bg-primary/5">
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm text-primary">
+                            {gozoVendaPeriodos === "1" || forceSingleGozo
+                              ? `Período de gozo — ${diasGozo} dias`
+                              : `1º Período de gozo — ${Math.ceil(diasGozo / 2)} dias`}
+                          </CardTitle>
+                        </CardHeader>
+                        <CardContent className="grid grid-cols-2 gap-4">
+                          <FormField control={form.control} name="gozo_venda_q1_inicio" render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Data de Início</FormLabel>
+                              <FormControl><Input type="date" {...field} /></FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )} />
+                          <FormItem>
+                            <FormLabel>Data de Fim (automático)</FormLabel>
+                            <Input type="date" value={form.watch("gozo_venda_q1_fim") || ""} readOnly className="bg-muted cursor-not-allowed" />
+                          </FormItem>
+                        </CardContent>
+                      </Card>
+
+                      {gozoVendaPeriodos === "2" && !forceSingleGozo && (
                         <Card className="border-primary/20 bg-primary/5">
                           <CardHeader className="pb-2">
-                            <CardTitle className="text-sm text-primary">1º Período — Gozo de {15 - diasPeriodo1} dias</CardTitle>
+                            <CardTitle className="text-sm text-primary">2º Período de gozo — {Math.floor(diasGozo / 2)} dias</CardTitle>
                           </CardHeader>
                           <CardContent className="grid grid-cols-2 gap-4">
-                            <div>
-                              <p className="text-xs text-muted-foreground mb-1">Início</p>
-                              <Input type="date" value={q1Inicio} readOnly className="bg-muted cursor-not-allowed text-sm" />
-                            </div>
-                            <div>
-                              <p className="text-xs text-muted-foreground mb-1">Fim (automático)</p>
-                              <Input type="date" value={q1Fim} readOnly className="bg-muted cursor-not-allowed text-sm" />
-                            </div>
+                            <FormField control={form.control} name="gozo_venda_q2_inicio" render={({ field }) => (
+                              <FormItem>
+                                <FormLabel>Data de Início</FormLabel>
+                                <FormControl><Input type="date" {...field} /></FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )} />
+                            <FormItem>
+                              <FormLabel>Data de Fim (automático)</FormLabel>
+                              <Input type="date" value={form.watch("gozo_venda_q2_fim") || ""} readOnly className="bg-muted cursor-not-allowed" />
+                            </FormItem>
                           </CardContent>
                         </Card>
                       )}
-                      {(15 - diasPeriodo2) > 0 && (
-                        <Card className="border-primary/20 bg-primary/5">
-                          <CardHeader className="pb-2">
-                            <CardTitle className="text-sm text-primary">2º Período — Gozo de {15 - diasPeriodo2} dias</CardTitle>
-                          </CardHeader>
-                          <CardContent className="grid grid-cols-2 gap-4">
-                            <div>
-                              <p className="text-xs text-muted-foreground mb-1">Início</p>
-                              <Input type="date" value={q2Inicio} readOnly className="bg-muted cursor-not-allowed text-sm" />
-                            </div>
-                            <div>
-                              <p className="text-xs text-muted-foreground mb-1">Fim (automático)</p>
-                              <Input type="date" value={q2Fim} readOnly className="bg-muted cursor-not-allowed text-sm" />
-                            </div>
-                          </CardContent>
-                        </Card>
-                      )}
-                    </div>
-                  )}
-
-                  {/* For > 15 days sold: single period gozo info */}
-                  {diasVendidos > 15 && diasVendidos < 30 && (
-                    <Card className="border-primary/20 bg-primary/5">
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-sm text-primary">Período de gozo residual — {diasGozo} dias</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <p className="text-sm">
-                          {q1Inicio && q1Fim ? `${formatDateBR(q1Inicio)} a ${formatDateBR(q1Fim)}` : "Preencha a data de início acima"}
-                        </p>
-                      </CardContent>
-                    </Card>
+                    </>
                   )}
 
                   {/* 30 days - full sale */}
@@ -1141,14 +1053,6 @@ export function FeriasDialog({ open, onOpenChange, ferias, anoReferencia, onSucc
                         <span>Dias restantes:</span>
                         <span>{diasGozo} dias</span>
                       </div>
-                      {diasVendidos >= 1 && diasVendidos <= 29 && effectiveNumeroPeriodos === "2" && (
-                        <div className="border-t pt-2 text-xs text-muted-foreground space-y-0.5">
-                          <p>1º: {diasPeriodo1} vendidos → {15 - diasPeriodo1} dias {q1Inicio && q1Fim ? `(${formatDateBR(q1Inicio)} a ${formatDateBR(q1Fim)})` : ""}</p>
-                          {restantesP2 > 0 && (
-                            <p>2º: {diasPeriodo2} vendidos → {15 - diasPeriodo2} dias {q2Inicio && q2Fim ? `(${formatDateBR(q2Inicio)} a ${formatDateBR(q2Fim)})` : ""}</p>
-                          )}
-                        </div>
-                      )}
                     </CardContent>
                   </Card>
 
@@ -1163,114 +1067,75 @@ export function FeriasDialog({ open, onOpenChange, ferias, anoReferencia, onSucc
                   )}
                 </div>
               )}
+
+              {/* ===== Gozo em Datas Diferentes (only for Exceção) ===== */}
+              {isGozoDiferente && (
+                <div className="space-y-4 pl-7 border-l-2 border-primary/20">
+                  {/* Referência dos períodos oficiais */}
+                  {q1Inicio && q1Fim && (
+                    <Alert className="border-muted bg-muted/30">
+                      <Info className="h-4 w-4" />
+                      <AlertTitle className="text-sm">Períodos oficiais cadastrados</AlertTitle>
+                      <AlertDescription className="text-xs">
+                        1º: {formatDateBR(q1Inicio)} a {formatDateBR(q1Fim)}
+                        {q2Inicio && q2Fim && ` | 2º: ${formatDateBR(q2Inicio)} a ${formatDateBR(q2Fim)}`}
+                      </AlertDescription>
+                    </Alert>
+                  )}
+
+                  <FormField
+                    control={form.control}
+                    name="gozo_periodos"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Qual período tem gozo diferente?</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger></FormControl>
+                          <SelectContent>
+                            <SelectItem value="1">1º Período</SelectItem>
+                            <SelectItem value="2">2º Período</SelectItem>
+                            <SelectItem value="ambos">Ambos</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  {(gozoPeriodos === "1" || gozoPeriodos === "ambos") && (
+                    <Card>
+                      <CardHeader className="pb-3"><CardTitle className="text-sm">1º Período (Gozo Realizado)</CardTitle></CardHeader>
+                      <CardContent className="grid grid-cols-2 gap-4">
+                        <FormField control={form.control} name="gozo_quinzena1_inicio" render={({ field }) => (
+                          <FormItem><FormLabel>Data de Início</FormLabel><FormControl><Input type="date" {...field} /></FormControl><FormMessage /></FormItem>
+                        )} />
+                        <FormItem>
+                          <FormLabel>Data de Fim (automático)</FormLabel>
+                          <Input type="date" value={form.watch("gozo_quinzena1_fim") || ""} readOnly className="bg-muted cursor-not-allowed" />
+                        </FormItem>
+                      </CardContent>
+                    </Card>
+                  )}
+
+                  {(gozoPeriodos === "2" || gozoPeriodos === "ambos") && (
+                    <Card>
+                      <CardHeader className="pb-3"><CardTitle className="text-sm">2º Período (Gozo Realizado)</CardTitle></CardHeader>
+                      <CardContent className="grid grid-cols-2 gap-4">
+                        <FormField control={form.control} name="gozo_quinzena2_inicio" render={({ field }) => (
+                          <FormItem><FormLabel>Data de Início</FormLabel><FormControl><Input type="date" {...field} /></FormControl><FormMessage /></FormItem>
+                        )} />
+                        <FormItem>
+                          <FormLabel>Data de Fim (automático)</FormLabel>
+                          <Input type="date" value={form.watch("gozo_quinzena2_fim") || ""} readOnly className="bg-muted cursor-not-allowed" />
+                        </FormItem>
+                      </CardContent>
+                    </Card>
+                  )}
+                </div>
+              )}
             </div>
 
-            <Separator />
-
-            {/* ===== SEÇÃO 4: Gozo em Datas Diferentes (only for Exceção, mutually exclusive with venda) ===== */}
-            {isExcecao && !venderDias && (
-              <div className="space-y-4">
-                <FormField
-                  control={form.control}
-                  name="gozo_diferente"
-                  render={({ field }) => (
-                    <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-                      <FormControl>
-                        <Checkbox
-                          checked={field.value}
-                          onCheckedChange={(checked) => {
-                            field.onChange(checked);
-                            if (checked) {
-                              // Mutual exclusivity: uncheck vender_dias
-                              form.setValue("vender_dias", false);
-                              form.setValue("dias_vendidos", 0);
-                            }
-                          }}
-                        />
-                      </FormControl>
-                      <div className="space-y-1 leading-none"><FormLabel className="text-base font-medium">Gozo Realizado em Datas Diferentes</FormLabel></div>
-                    </FormItem>
-                  )}
-                />
-
-                {gozoDiferente && (
-                  <div className="space-y-4 pl-7">
-                    {/* Referência dos períodos oficiais */}
-                    {q1Inicio && q1Fim && (
-                      <Alert className="border-muted bg-muted/30">
-                        <Info className="h-4 w-4" />
-                        <AlertTitle className="text-sm">Períodos oficiais cadastrados</AlertTitle>
-                        <AlertDescription className="text-xs">
-                          1º: {formatDateBR(q1Inicio)} a {formatDateBR(q1Fim)}
-                          {effectiveNumeroPeriodos === "2" && q2Inicio && q2Fim && ` | 2º: ${formatDateBR(q2Inicio)} a ${formatDateBR(q2Fim)}`}
-                        </AlertDescription>
-                      </Alert>
-                    )}
-
-                    <FormField
-                      control={form.control}
-                      name="gozo_periodos"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Qual período tem gozo diferente?</FormLabel>
-                          <Select onValueChange={field.onChange} value={field.value}>
-                            <FormControl><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger></FormControl>
-                            <SelectContent>
-                              <SelectItem value="1">1º Período</SelectItem>
-                              {effectiveNumeroPeriodos === "2" && <SelectItem value="2">2º Período</SelectItem>}
-                              {effectiveNumeroPeriodos === "2" && <SelectItem value="ambos">Ambos</SelectItem>}
-                            </SelectContent>
-                          </Select>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-
-                    {(gozoPeriodos === "1" || gozoPeriodos === "ambos") && (
-                      <Card>
-                        <CardHeader className="pb-3"><CardTitle className="text-sm">1º Período (Gozo Realizado)</CardTitle></CardHeader>
-                        <CardContent className="grid grid-cols-2 gap-4">
-                          <FormField control={form.control} name="gozo_quinzena1_inicio" render={({ field }) => (
-                            <FormItem><FormLabel>Data de Início</FormLabel><FormControl><Input type="date" {...field} /></FormControl><FormMessage /></FormItem>
-                          )} />
-                          <FormItem>
-                            <FormLabel>Data de Fim (automático)</FormLabel>
-                            <Input type="date" value={form.watch("gozo_quinzena1_fim") || ""} readOnly className="bg-muted cursor-not-allowed" />
-                          </FormItem>
-                        </CardContent>
-                      </Card>
-                    )}
-
-                    {effectiveNumeroPeriodos === "2" && (gozoPeriodos === "2" || gozoPeriodos === "ambos") && (
-                      <Card>
-                        <CardHeader className="pb-3"><CardTitle className="text-sm">2º Período (Gozo Realizado)</CardTitle></CardHeader>
-                        <CardContent className="grid grid-cols-2 gap-4">
-                          <FormField control={form.control} name="gozo_quinzena2_inicio" render={({ field }) => (
-                            <FormItem><FormLabel>Data de Início</FormLabel><FormControl><Input type="date" {...field} /></FormControl><FormMessage /></FormItem>
-                          )} />
-                          <FormItem>
-                            <FormLabel>Data de Fim (automático)</FormLabel>
-                            <Input type="date" value={form.watch("gozo_quinzena2_fim") || ""} readOnly className="bg-muted cursor-not-allowed" />
-                          </FormItem>
-                        </CardContent>
-                      </Card>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Show info when vender_dias is active and user might want gozo_diferente */}
-            {isExcecao && venderDias && (
-              <Alert className="border-muted bg-muted/30">
-                <Info className="h-4 w-4" />
-                <AlertDescription className="text-sm">
-                  Não é possível vender dias e ter gozo em datas diferentes ao mesmo tempo. Desmarque "Vender dias" se precisar registrar gozo em datas diferentes.
-                </AlertDescription>
-              </Alert>
-            )}
-
-            {/* ===== SEÇÃO 5: Conflitos (automático) ===== */}
+            {/* ===== SEÇÃO 4: Conflitos (automático) ===== */}
             {conflicts.length > 0 && (
               <>
                 <Separator />
