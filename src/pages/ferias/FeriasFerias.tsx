@@ -44,8 +44,8 @@ interface FeriasRecord {
   colaborador_id: string;
   quinzena1_inicio: string;
   quinzena1_fim: string;
-  quinzena2_inicio: string;
-  quinzena2_fim: string;
+  quinzena2_inicio: string | null;
+  quinzena2_fim: string | null;
   gozo_diferente: boolean;
   gozo_quinzena1_inicio: string | null;
   gozo_quinzena1_fim: string | null;
