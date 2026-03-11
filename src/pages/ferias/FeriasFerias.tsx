@@ -366,7 +366,7 @@ export default function FeriasFerias() {
       xPos += colWidths[3];
       pdf.text(calcAdjustedPeriodo(f.quinzena1_inicio, f.quinzena1_fim, vendP1), xPos + 2, yPos);
       xPos += colWidths[4];
-      pdf.text(calcAdjustedPeriodo(f.quinzena2_inicio, f.quinzena2_fim, vendP2), xPos + 2, yPos);
+      pdf.text(f.quinzena2_inicio && f.quinzena2_fim ? calcAdjustedPeriodo(f.quinzena2_inicio, f.quinzena2_fim, vendP2) : "—", xPos + 2, yPos);
       xPos += colWidths[5];
       pdf.text(diasVend > 0 ? String(diasVend) : "—", xPos + 2, yPos);
 
