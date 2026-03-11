@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Calendar, User, Building2, AlertTriangle, DollarSign } from "lucide-react";
-import { format, parseISO, addDays } from "date-fns";
+import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
 interface FeriasViewDialogProps {
@@ -57,37 +57,8 @@ export function FeriasViewDialog({ open, onOpenChange, ferias }: FeriasViewDialo
     }
   };
 
-  // Calculate adjusted dates when there's a sale
   const diasVendidos = ferias.dias_vendidos || 0;
   const hasVenda = ferias.vender_dias && diasVendidos > 0;
-
-  const getAdjustedPeriodInfo = () => {
-    if (!hasVenda || diasVendidos >= 16) return null;
-
-    // For 1-15 days: calculate remaining per period
-    const vendidosP1 = ferias.dias_periodo1 ?? (ferias.quinzena_venda === 1 ? diasVendidos : 0);
-    const vendidosP2 = ferias.dias_periodo2 ?? (ferias.quinzena_venda === 2 ? diasVendidos : 0);
-    const restantesP1 = 15 - vendidosP1;
-    const restantesP2 = 15 - vendidosP2;
-
-    let p1Fim = ferias.quinzena1_fim;
-    let p2Fim = ferias.quinzena2_fim;
-
-    if (restantesP1 > 0 && restantesP1 < 15 && ferias.quinzena1_inicio) {
-      try {
-        p1Fim = format(addDays(parseISO(ferias.quinzena1_inicio), restantesP1 - 1), "yyyy-MM-dd");
-      } catch { /* ignore */ }
-    }
-    if (restantesP2 > 0 && restantesP2 < 15 && ferias.quinzena2_inicio) {
-      try {
-        p2Fim = format(addDays(parseISO(ferias.quinzena2_inicio), restantesP2 - 1), "yyyy-MM-dd");
-      } catch { /* ignore */ }
-    }
-
-    return { vendidosP1, vendidosP2, restantesP1, restantesP2, p1Fim, p2Fim };
-  };
-
-  const adjustedInfo = getAdjustedPeriodInfo();
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -119,7 +90,7 @@ export function FeriasViewDialog({ open, onOpenChange, ferias }: FeriasViewDialo
 
           <Separator />
 
-          {/* Periods */}
+          {/* Official Periods - always 2 */}
           <div className="grid gap-4 md:grid-cols-2">
             <Card>
               <CardHeader className="pb-2">
@@ -132,27 +103,16 @@ export function FeriasViewDialog({ open, onOpenChange, ferias }: FeriasViewDialo
               </CardContent>
             </Card>
 
-            {ferias.quinzena2_inicio ? (
-              <Card>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium">2º Período (Direito)</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm">
-                    {formatDate(ferias.quinzena2_inicio)} a {formatDate(ferias.quinzena2_fim)}
-                  </p>
-                </CardContent>
-              </Card>
-            ) : (
-              <Card className="border-yellow-500/20 bg-yellow-500/5">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-yellow-600">Período Único</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-muted-foreground">Apenas 1 período cadastrado</p>
-                </CardContent>
-              </Card>
-            )}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">2º Período (Direito)</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm">
+                  {formatDate(ferias.quinzena2_inicio)} a {formatDate(ferias.quinzena2_fim)}
+                </p>
+              </CardContent>
+            </Card>
           </div>
 
           {/* Gozo diferente */}
@@ -212,46 +172,30 @@ export function FeriasViewDialog({ open, onOpenChange, ferias }: FeriasViewDialo
                   </div>
                 </div>
 
-                {/* Distribution detail for 1-15 days */}
-                {adjustedInfo && (
+                {/* Gozo dates from sale */}
+                {ferias.gozo_quinzena1_inicio && (
                   <div className="grid gap-4 md:grid-cols-2 mt-2">
                     <Card className="border-primary/20 bg-primary/5">
                       <CardHeader className="pb-2">
-                        <CardTitle className="text-xs text-primary">1º Período — {adjustedInfo.vendidosP1} vendidos, {adjustedInfo.restantesP1} restantes</CardTitle>
+                        <CardTitle className="text-xs text-primary">
+                          {ferias.gozo_quinzena2_inicio ? "1º Período de Gozo" : "Período de Gozo"}
+                        </CardTitle>
                       </CardHeader>
                       <CardContent>
-                        {adjustedInfo.restantesP1 > 0 ? (
-                          <p className="text-sm">{formatDate(ferias.quinzena1_inicio)} a {formatDate(adjustedInfo.p1Fim)}</p>
-                        ) : (
-                          <p className="text-sm text-muted-foreground">Período totalmente vendido</p>
-                        )}
+                        <p className="text-sm">{formatDate(ferias.gozo_quinzena1_inicio)} a {formatDate(ferias.gozo_quinzena1_fim)}</p>
                       </CardContent>
                     </Card>
-                    <Card className="border-primary/20 bg-primary/5">
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-xs text-primary">2º Período — {adjustedInfo.vendidosP2} vendidos, {adjustedInfo.restantesP2} restantes</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        {adjustedInfo.restantesP2 > 0 ? (
-                          <p className="text-sm">{formatDate(ferias.quinzena2_inicio)} a {formatDate(adjustedInfo.p2Fim)}</p>
-                        ) : (
-                          <p className="text-sm text-muted-foreground">Período totalmente vendido</p>
-                        )}
-                      </CardContent>
-                    </Card>
+                    {ferias.gozo_quinzena2_inicio && (
+                      <Card className="border-primary/20 bg-primary/5">
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-xs text-primary">2º Período de Gozo</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <p className="text-sm">{formatDate(ferias.gozo_quinzena2_inicio)} a {formatDate(ferias.gozo_quinzena2_fim)}</p>
+                        </CardContent>
+                      </Card>
+                    )}
                   </div>
-                )}
-
-                {/* Residual for >=16 */}
-                {diasVendidos >= 16 && diasVendidos < 30 && ferias.gozo_quinzena1_inicio && (
-                  <Card className="border-primary/20 bg-primary/5 mt-2">
-                    <CardHeader className="pb-2">
-                      <CardTitle className="text-xs text-primary">Período de gozo residual — {30 - diasVendidos} dias</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <p className="text-sm">{formatDate(ferias.gozo_quinzena1_inicio)} a {formatDate(ferias.gozo_quinzena1_fim)}</p>
-                    </CardContent>
-                  </Card>
                 )}
 
                 {diasVendidos === 30 && (
