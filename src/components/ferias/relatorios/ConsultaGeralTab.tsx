@@ -108,7 +108,9 @@ export function ConsultaGeralTab() {
         const matchesStatus = selectedStatus === "_all_" || f.status === selectedStatus;
         const matchesTipo = selectedTipo === "_all_" || 
           (selectedTipo === "excecao" && f.is_excecao) || 
-          (selectedTipo === "normal" && !f.is_excecao);
+          (selectedTipo === "normal" && !f.is_excecao) ||
+          (selectedTipo === "1_periodo" && !f.quinzena2_inicio) ||
+          (selectedTipo === "2_periodos" && !!f.quinzena2_inicio);
         return matchesSearch && matchesSetor && matchesStatus && matchesTipo;
       })
       .sort((a, b) => {
@@ -136,7 +138,7 @@ export function ConsultaGeralTab() {
 
   // Stats
   const stats = useMemo(() => {
-    if (!ferias) return { total: 0, emGozo: 0, concluidas: 0, pendentesAprovadas: 0, excecoes: 0, faltantes: 0 };
+    if (!ferias) return { total: 0, emGozo: 0, concluidas: 0, pendentesAprovadas: 0, excecoes: 0, faltantes: 0, umPeriodo: 0 };
     const colabComFerias = new Set(ferias.map(f => f.colaborador_id).filter(Boolean));
     return {
       total: ferias.length,
@@ -145,13 +147,14 @@ export function ConsultaGeralTab() {
       pendentesAprovadas: ferias.filter(f => f.status === "pendente" || f.status === "aprovada").length,
       excecoes: ferias.filter(f => f.is_excecao).length,
       faltantes: Math.max(0, (totalColaboradores || 0) - colabComFerias.size),
+      umPeriodo: ferias.filter(f => !f.quinzena2_inicio).length,
     };
   }, [ferias, totalColaboradores]);
 
   return (
     <div className="space-y-6">
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-xs font-medium text-muted-foreground">Total</CardTitle></CardHeader>
           <CardContent><div className="text-2xl font-bold">{stats.total}</div></CardContent>
@@ -176,6 +179,12 @@ export function ConsultaGeralTab() {
           <CardHeader className="pb-2"><CardTitle className="text-xs font-medium text-destructive">Faltantes</CardTitle></CardHeader>
           <CardContent><div className="text-2xl font-bold text-destructive">{stats.faltantes}</div></CardContent>
         </Card>
+        {stats.umPeriodo > 0 && (
+          <Card className="border-yellow-500/20">
+            <CardHeader className="pb-2"><CardTitle className="text-xs font-medium text-yellow-600">1 Período</CardTitle></CardHeader>
+            <CardContent><div className="text-2xl font-bold text-yellow-600">{stats.umPeriodo}</div></CardContent>
+          </Card>
+        )}
       </div>
 
       {/* Filters */}
@@ -210,6 +219,8 @@ export function ConsultaGeralTab() {
                 <SelectItem value="_all_">Todos</SelectItem>
                 <SelectItem value="normal">Normal</SelectItem>
                 <SelectItem value="excecao">Exceção</SelectItem>
+                <SelectItem value="1_periodo">1 Período</SelectItem>
+                <SelectItem value="2_periodos">2 Períodos</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -258,7 +269,7 @@ export function ConsultaGeralTab() {
                         <TableCell className="text-sm text-muted-foreground">{f.colaborador?.cpf || "—"}</TableCell>
                         <TableCell className="text-sm">{f.colaborador?.setor?.nome || "—"}</TableCell>
                         <TableCell className="text-sm">{formatDate(f.quinzena1_inicio)} - {formatDate(f.quinzena1_fim)}</TableCell>
-                        <TableCell className="text-sm">{formatDate(f.quinzena2_inicio)} - {formatDate(f.quinzena2_fim)}</TableCell>
+                        <TableCell className="text-sm">{f.quinzena2_inicio ? `${formatDate(f.quinzena2_inicio)} - ${formatDate(f.quinzena2_fim)}` : <Badge variant="outline" className="bg-yellow-500/10 text-yellow-600 border-yellow-500/20 text-xs">1 período</Badge>}</TableCell>
                         <TableCell className="text-sm">
                           {f.gozo_diferente ? (
                             <div className="space-y-1">

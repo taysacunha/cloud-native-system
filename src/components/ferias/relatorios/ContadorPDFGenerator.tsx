@@ -142,15 +142,15 @@ export function ContadorPDFGenerator() {
         xPos = margin + 2;
         const diasVendidosContador = Math.min(f.dias_vendidos || 0, 10);
         const diasGozo1 = calcularDiasContador(f.quinzena1_inicio, f.quinzena1_fim, f.quinzena_venda === 1 ? diasVendidosContador : 0);
-        const diasGozo2 = calcularDiasContador(f.quinzena2_inicio, f.quinzena2_fim, f.quinzena_venda === 2 ? diasVendidosContador : 0);
+        const diasGozo2 = f.quinzena2_inicio && f.quinzena2_fim ? calcularDiasContador(f.quinzena2_inicio, f.quinzena2_fim, f.quinzena_venda === 2 ? diasVendidosContador : 0) : 0;
 
         const rowData = [
           (f.colaborador?.nome || "N/A").substring(0, 28),
           f.colaborador?.cpf || "-",
           formatDate(f.quinzena1_inicio),
           formatDate(f.quinzena1_fim),
-          formatDate(f.quinzena2_inicio),
-          formatDate(f.quinzena2_fim),
+          f.quinzena2_inicio ? formatDate(f.quinzena2_inicio) : "-",
+          f.quinzena2_fim ? formatDate(f.quinzena2_fim) : "-",
           diasVendidosContador.toString(),
           `${diasGozo1 + diasGozo2}`,
           f.status === "aprovada" ? "Aprovada" : f.status === "pendente" ? "Pendente" : f.status || "-",
@@ -287,7 +287,7 @@ export function ContadorPDFGenerator() {
                         {formatDate(f.quinzena1_inicio)} - {formatDate(f.quinzena1_fim)}
                       </TableCell>
                       <TableCell>
-                        {formatDate(f.quinzena2_inicio)} - {formatDate(f.quinzena2_fim)}
+                        {f.quinzena2_inicio ? `${formatDate(f.quinzena2_inicio)} - ${formatDate(f.quinzena2_fim)}` : "-"}
                       </TableCell>
                       <TableCell className="text-center">
                         <Badge variant={f.dias_vendidos && f.dias_vendidos > 10 ? "destructive" : "secondary"}>
