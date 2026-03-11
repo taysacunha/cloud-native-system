@@ -142,7 +142,7 @@ export function ContadorPDFGenerator() {
         xPos = margin + 2;
         const diasVendidosContador = Math.min(f.dias_vendidos || 0, 10);
         const diasGozo1 = calcularDiasContador(f.quinzena1_inicio, f.quinzena1_fim, f.quinzena_venda === 1 ? diasVendidosContador : 0);
-        const diasGozo2 = calcularDiasContador(f.quinzena2_inicio, f.quinzena2_fim, f.quinzena_venda === 2 ? diasVendidosContador : 0);
+        const diasGozo2 = f.quinzena2_inicio && f.quinzena2_fim ? calcularDiasContador(f.quinzena2_inicio, f.quinzena2_fim, f.quinzena_venda === 2 ? diasVendidosContador : 0) : 0;
 
         const rowData = [
           (f.colaborador?.nome || "N/A").substring(0, 28),
