@@ -47,6 +47,7 @@ export default function Auth() {
   const [password, setPassword] = useState("");
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [resetEmail, setResetEmail] = useState("");
+  const [resetCooldown, setResetCooldown] = useState(0);
   
   // Estados para definição de senha
   const [isSettingPassword, setIsSettingPassword] = useState(false);
@@ -281,15 +282,36 @@ export default function Auth() {
     setLoading(false);
   };
 
+  // Cooldown timer effect
+  useEffect(() => {
+    if (resetCooldown <= 0) return;
+    const timer = setInterval(() => {
+      setResetCooldown((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [resetCooldown]);
+
+  const startCooldown = () => {
+    setResetCooldown(60);
+  };
+
   const handlePasswordReset = async () => {
     if (!resetEmail) {
       toast.error("Por favor, insira seu email");
       return;
     }
+    if (resetCooldown > 0) {
+      toast.error(`Aguarde ${resetCooldown} segundos antes de tentar novamente.`);
+      return;
+    }
     setLoading(true);
     
-    // SEMPRE usar domínio publicado para links de recovery (nunca preview)
-    // Isso evita que usuários caiam no auth-bridge do lovable.dev
     const isPreview = window.location.hostname.includes('lovableproject.com') || 
                       window.location.hostname.includes('lovable.app') && window.location.hostname.includes('-preview');
     const canonicalUrl = isPreview 
@@ -302,9 +324,18 @@ export default function Auth() {
       redirectTo: canonicalUrl
     });
     if (error) {
-      toast.error("Erro ao enviar email de recuperação");
+      const msg = error.message?.toLowerCase() || '';
+      if (msg.includes('rate') || msg.includes('limit') || msg.includes('429') || msg.includes('over_email_send_rate_limit')) {
+        toast.error("Você já solicitou recuperação há pouco. Aguarde 60 segundos e tente novamente.");
+        startCooldown();
+      } else if (msg.includes('user not found') || msg.includes('unable to validate')) {
+        toast.error("Email não encontrado. Verifique se digitou o email correto.");
+      } else {
+        toast.error("Erro ao enviar email de recuperação. Tente novamente.");
+      }
     } else {
-      toast.success("Email de recuperação enviado! Verifique sua caixa de entrada.");
+      toast.success("Email de recuperação enviado! Verifique sua caixa de entrada e spam.");
+      startCooldown();
       setResetDialogOpen(false);
       setResetEmail("");
     }
@@ -646,10 +677,15 @@ export default function Auth() {
                 disabled={loading}
               />
             </div>
-            <Button onClick={handlePasswordReset} className="w-full" disabled={loading}>
+            <Button onClick={handlePasswordReset} className="w-full" disabled={loading || resetCooldown > 0}>
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Enviar Email de Recuperação
+              {resetCooldown > 0 
+                ? `Aguarde ${resetCooldown}s para reenviar` 
+                : 'Enviar Email de Recuperação'}
             </Button>
+            <p className="text-xs text-muted-foreground text-center">
+              Use o email cadastrado no sistema. Após enviar, verifique também a pasta de spam.
+            </p>
           </div>
         </DialogContent>
       </Dialog>

@@ -1,42 +1,57 @@
 
-Objetivo: corrigir o erro no “Esqueci minha senha” e deixar claro para o usuário quando é bloqueio de frequência (rate limit), em vez de mostrar erro genérico.
 
-Diagnóstico confirmado
-- O erro atual não é “email não cadastrado” nem falha de código principal.
-- Nos logs de Auth há resposta `429 over_email_send_rate_limit` no endpoint `/recover`.
-- Houve envio com sucesso (`200`) pouco antes, e a nova tentativa foi feita dentro da janela de bloqueio.
-- Por isso aparece “Erro ao enviar email de recuperação” (mensagem genérica do frontend).
+## Plano - 4 Correções
 
-Plano de implementação (arquivo: `src/pages/Auth.tsx`)
-1) Melhorar tratamento de erro do reset
-- No `handlePasswordReset`, diferenciar:
-  - `429` / `over_email_send_rate_limit` / `email rate limit exceeded`
-  - email inválido
-  - erro genérico de rede/API
-- Mostrar mensagens específicas, por exemplo:
-  - “Você já solicitou recuperação há pouco. Aguarde X segundos e tente novamente.”
+### 1. Dialog de corretores quebrado (sem scroll)
 
-2) Adicionar cooldown visual no modal
-- Criar estado de cooldown (ex.: `resetCooldownUntil` + contador em segundos).
-- Quando houver sucesso no envio **ou** erro 429:
-  - iniciar cooldown local (ex.: 60s)
-  - desabilitar botão “Enviar Email de Recuperação”
-  - exibir contagem regressiva no botão ou abaixo do campo.
-- Enquanto cooldown ativo, bloquear nova chamada ao `resetPasswordForEmail` (evita spam de clique).
+**Problema:** O `DialogContent` em `SalesBrokers.tsx` (linha 473) não tem limite de altura. Com os novos campos CRECI e Nome de Exibição, o conteúdo ultrapassa a viewport e os botões Cancelar/Salvar ficam inacessíveis.
 
-3) Tornar feedback mais confiável para o usuário
-- Manter modal aberto nos erros (já acontece) com mensagem clara.
-- Exibir ajuda curta:
-  - “Use o e-mail atualmente cadastrado”
-  - “Use sempre o link mais recente recebido por email” (links antigos podem expirar).
+**Solução:** Adicionar `className="max-w-lg max-h-[90vh] overflow-y-auto"` ao `DialogContent` (linha 473). O `DialogFooter` (linha 638) receberá `className="sticky bottom-0 bg-background pt-4 border-t"` para ficar sempre visível.
 
-4) Validação de fluxo (teste funcional)
-- Cenário A: primeiro envio → sucesso + cooldown inicia.
-- Cenário B: tentar novamente durante cooldown → bloqueado localmente, sem chamada nova.
-- Cenário C: após cooldown → permite novo envio.
-- Cenário D: forçar 429 via repetição → mensagem específica de limite (não genérica).
+**Arquivo:** `src/pages/vendas/SalesBrokers.tsx` (linhas 473, 638)
 
-Resultado esperado
-- O usuário entende exatamente o motivo do erro.
-- Reduz chamadas repetidas que batem no limite do Supabase.
-- Menos frustração e menos suporte manual para recuperação de senha.
+---
+
+### 2. Relatório Corretores Vendas - dados de meses sem cadastro
+
+**Problema:** No modo mensal, o `months` (linha 200-224) inclui o mês anterior para "contexto de evolução". Os totais (linhas 400-409) e queries de `saleDetails`, `proposalsData`, `leadsData`, `evaluationsData` usam esse array completo, então dados do mês anterior "vazam" para o mês selecionado.
+
+**Solução:** Criar um `reportMonths` separado que contém apenas o mês selecionado (sem o anterior). Usar `reportMonths` para calcular totais e buscar `saleDetails`. Manter `months` completo apenas para os gráficos de evolução (`salesData`, `proposalsData`, `leadsData`, `evaluationsData` nos charts).
+
+Concretamente:
+- Adicionar `const reportMonths = periodType === "month" ? [months[months.length - 1]] : months;`
+- Alterar `totalVGV`, `totalSales` para somar apenas entries cujo `month` esteja em `reportMonths`
+- Alterar `totalProposals`, `totalConverted`, `totalLeads`, `totalLeadsActive`, `totalVisits`, `avgScore` idem
+- Alterar query de `saleDetails` para usar `reportMonths` no `.in("year_month", ...)`
+
+**Arquivo:** `src/components/vendas/BrokerIndividualReport.tsx` (linhas ~200, 384-409)
+
+---
+
+### 3. Divs de vendas/avaliação não aparecem no PDF
+
+**Problema:** `hidden print:block` (linhas 713, 753) funciona com `window.print()` mas **não** com `html2canvas`, que captura o estado visual atual do DOM. Os elementos ficam `display:none` durante a captura.
+
+**Solução:** Usar o estado `isExporting` (já existe, linha 192) para controlar visibilidade:
+- Trocar `className="hidden print:block"` por renderização condicional: `{isExporting && saleDetails.length > 0 && (<Card>...</Card>)}`
+- No `handleExportPDF` (linha 428), o `setIsExporting(true)` já é chamado antes do `html2canvas`. Adicionar um `await new Promise(r => setTimeout(r, 100))` entre o `setIsExporting(true)` e o `html2canvas` para dar tempo ao React de renderizar os blocos.
+
+**Arquivo:** `src/components/vendas/BrokerIndividualReport.tsx` (linhas 711-755, 434-436)
+
+---
+
+### 4. Ajuste de qualidade - acessibilidade do dialog
+
+**Identificado:** O `DialogContent` de corretores já tem `DialogDescription`, então está ok. Verificar se outros dialogs do mesmo arquivo têm `DialogDescription` para evitar warnings no console.
+
+**Arquivo:** `src/pages/vendas/SalesBrokers.tsx`
+
+---
+
+### Resumo
+
+| Arquivo | Alteração |
+|---------|-----------|
+| `SalesBrokers.tsx` | Scroll + footer sticky no dialog |
+| `BrokerIndividualReport.tsx` | `reportMonths` para totais, renderização condicional por `isExporting` |
+
