@@ -677,10 +677,15 @@ export default function Auth() {
                 disabled={loading}
               />
             </div>
-            <Button onClick={handlePasswordReset} className="w-full" disabled={loading}>
+            <Button onClick={handlePasswordReset} className="w-full" disabled={loading || resetCooldown > 0}>
               {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Enviar Email de Recuperação
+              {resetCooldown > 0 
+                ? `Aguarde ${resetCooldown}s para reenviar` 
+                : 'Enviar Email de Recuperação'}
             </Button>
+            <p className="text-xs text-muted-foreground text-center">
+              Use o email cadastrado no sistema. Após enviar, verifique também a pasta de spam.
+            </p>
           </div>
         </DialogContent>
       </Dialog>
