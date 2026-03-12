@@ -63,7 +63,7 @@ const systemConfigs: Record<SystemName, { title: string; description: string; ic
   estoque: {
     title: "Gestão de Estoques",
     description: "Materiais, solicitações e movimentações",
-    icon: <Package className="h-8 w-8 text-amber-600" />,
+    icon: <Package className="h-8 w-8 text-primary" />,
     color: "bg-card",
     route: "/estoque",
   },
