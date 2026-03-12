@@ -56,7 +56,7 @@ const systemConfigs: Record<SystemName, { title: string; description: string; ic
   ferias: {
     title: "Gestão Férias e Folgas",
     description: "Férias, folgas de sábado e aniversariantes",
-    icon: <Palmtree className="h-8 w-8 text-green-600" />,
+    icon: <Palmtree className="h-8 w-8 text-primary" />,
     color: "bg-card",
     route: "/ferias",
   },
