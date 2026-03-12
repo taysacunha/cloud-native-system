@@ -47,6 +47,7 @@ export default function Auth() {
   const [password, setPassword] = useState("");
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [resetEmail, setResetEmail] = useState("");
+  const [resetCooldown, setResetCooldown] = useState(0);
   
   // Estados para definição de senha
   const [isSettingPassword, setIsSettingPassword] = useState(false);
