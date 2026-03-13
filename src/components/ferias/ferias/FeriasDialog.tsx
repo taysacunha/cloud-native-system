@@ -1171,8 +1171,6 @@ export function FeriasDialog({ open, onOpenChange, ferias, anoReferencia, onSucc
       </DialogContent>
     </Dialog>
   );
-}
-              <div className="flex gap-2">
                 <Button
                   type="button"
                   variant={!isExcecao ? "default" : "outline"}
