@@ -1194,11 +1194,6 @@ export function FeriasDialog({ open, onOpenChange, ferias, anoReferencia, onSucc
     </Dialog>
   );
 }
-
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-
-            {/* ===== SEÇÃO 1: Tipo de Cadastro (Padrão / Exceção) ===== */}
             <div className="space-y-3">
               <p className="text-sm font-medium">Tipo de cadastro</p>
               <div className="flex gap-2">
