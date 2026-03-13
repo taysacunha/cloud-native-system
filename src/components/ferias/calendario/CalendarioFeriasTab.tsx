@@ -28,8 +28,8 @@ interface Ferias {
   colaborador_id: string;
   quinzena1_inicio: string;
   quinzena1_fim: string;
-  quinzena2_inicio: string;
-  quinzena2_fim: string;
+  quinzena2_inicio: string | null;
+  quinzena2_fim: string | null;
   gozo_diferente: boolean;
   gozo_quinzena1_inicio: string | null;
   gozo_quinzena1_fim: string | null;
@@ -197,10 +197,13 @@ export function CalendarioFeriasTab() {
     }
 
     // Default: official periods
-    return [
+    const intervals = [
       { start: parseISO(f.quinzena1_inicio), end: parseISO(f.quinzena1_fim) },
-      { start: parseISO(f.quinzena2_inicio), end: parseISO(f.quinzena2_fim) },
     ];
+    if (f.quinzena2_inicio && f.quinzena2_fim) {
+      intervals.push({ start: parseISO(f.quinzena2_inicio), end: parseISO(f.quinzena2_fim) });
+    }
+    return intervals;
   };
 
   // Legacy helper for dialog display

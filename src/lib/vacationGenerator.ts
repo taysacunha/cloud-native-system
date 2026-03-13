@@ -184,9 +184,14 @@ function checkWindowConflicts(
     if (!allocSetorId || !allSectorIds.includes(allocSetorId)) continue;
 
     const aQ1S = parseISO(alloc.quinzena1_inicio), aQ1E = parseISO(alloc.quinzena1_fim);
-    const aQ2S = parseISO(alloc.quinzena2_inicio), aQ2E = parseISO(alloc.quinzena2_fim);
+    const aQ2S = alloc.quinzena2_inicio ? parseISO(alloc.quinzena2_inicio) : null;
+    const aQ2E = alloc.quinzena2_fim ? parseISO(alloc.quinzena2_fim) : null;
 
-    if (datesOverlap(wStart, wEnd, aQ1S, aQ1E) || datesOverlap(wStart, wEnd, aQ2S, aQ2E)) {
+    let hasOverlap = datesOverlap(wStart, wEnd, aQ1S, aQ1E);
+    if (aQ2S && aQ2E) {
+      hasOverlap = hasOverlap || datesOverlap(wStart, wEnd, aQ2S, aQ2E);
+    }
+    if (hasOverlap) {
       conflicts.push({
         tipo: allocSetorId !== setorId ? "substituto" : "setor",
         descricao: `Conflito com ${alloc.colaborador_nome}`,
@@ -202,9 +207,15 @@ function checkWindowConflicts(
     if (!existSetorId || !allSectorIds.includes(existSetorId)) continue;
 
     const eQ1S = parseISO(existing.quinzena1_inicio), eQ1E = parseISO(existing.quinzena1_fim);
-    const eQ2S = parseISO(existing.quinzena2_inicio), eQ2E = parseISO(existing.quinzena2_fim);
+    const eQ2S = existing.quinzena2_inicio ? parseISO(existing.quinzena2_inicio) : null;
+    const eQ2E = existing.quinzena2_fim ? parseISO(existing.quinzena2_fim) : null;
 
-    if (datesOverlap(wStart, wEnd, eQ1S, eQ1E) || datesOverlap(wStart, wEnd, eQ2S, eQ2E)) {
+    let hasOverlap = datesOverlap(wStart, wEnd, eQ1S, eQ1E);
+    if (eQ2S && eQ2E) {
+      hasOverlap = hasOverlap || datesOverlap(wStart, wEnd, eQ2S, eQ2E);
+    }
+
+    if (hasOverlap) {
       conflicts.push({
         tipo: existSetorId !== setorId ? "substituto" : "setor",
         descricao: `Conflito com ${existing.colaborador?.nome || 'colaborador'} (já cadastrado)`,
@@ -255,9 +266,15 @@ export async function generateVacations(
     }
 
     // Check if already has vacation
-    const hasExisting = existingVacations.some(v => v.colaborador_id === form.colaborador_id);
-    if (hasExisting) {
-      result.unprocessed.push({ colaborador_nome: form.colaborador.nome, motivo: "Já possui férias cadastradas para este ano" });
+    const existingForColab = existingVacations.filter(v => v.colaborador_id === form.colaborador_id);
+    const hasComplete = existingForColab.some(v => v.quinzena2_inicio != null);
+    const hasPendingQ2 = existingForColab.some(v => v.quinzena2_inicio == null);
+    if (hasComplete) {
+      result.unprocessed.push({ colaborador_nome: form.colaborador.nome, motivo: "Já possui férias completas cadastradas para este ano" });
+      continue;
+    }
+    if (hasPendingQ2) {
+      result.unprocessed.push({ colaborador_nome: form.colaborador.nome, motivo: "Possui férias com 2º período pendente — defina antes de gerar novas" });
       continue;
     }
 

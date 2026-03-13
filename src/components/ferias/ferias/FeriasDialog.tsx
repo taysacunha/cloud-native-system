@@ -56,8 +56,8 @@ const feriasSchema = z.object({
   colaborador_id: z.string().min(1, "Colaborador é obrigatório"),
   quinzena1_inicio: z.string().min(1, "Data de início é obrigatória"),
   quinzena1_fim: z.string().min(1, "Data de fim é obrigatória"),
-  quinzena2_inicio: z.string().min(1, "Data de início do 2º período é obrigatória"),
-  quinzena2_fim: z.string().min(1, "Data de fim do 2º período é obrigatória"),
+  quinzena2_inicio: z.string().optional().or(z.literal("")),
+  quinzena2_fim: z.string().optional().or(z.literal("")),
   opcao_adicional: z.enum(["nenhum", "vender", "gozo_diferente"]).default("nenhum"),
   gozo_periodos: z.enum(["1", "2", "ambos"]).default("ambos"),
   gozo_quinzena1_inicio: z.string().optional(),
@@ -497,8 +497,8 @@ export function FeriasDialog({ open, onOpenChange, ferias, anoReferencia, onSucc
         if (existingFerias) {
           const q1Start = parseISO(data.quinzena1_inicio);
           const q1End = parseISO(data.quinzena1_fim);
-          const q2Start = parseISO(data.quinzena2_inicio);
-          const q2End = parseISO(data.quinzena2_fim);
+          const q2Start = data.quinzena2_inicio ? parseISO(data.quinzena2_inicio) : null;
+          const q2End = data.quinzena2_fim ? parseISO(data.quinzena2_fim) : null;
 
           for (const ef of existingFerias) {
             if (ferias && ef.id === ferias.id) continue;
@@ -512,9 +512,11 @@ export function FeriasDialog({ open, onOpenChange, ferias, anoReferencia, onSucc
             if (efQ2Start && efQ2End) {
               overlap = overlap || (q1Start <= efQ2End && q1End >= efQ2Start);
             }
-            overlap = overlap || (q2Start <= efQ1End && q2End >= efQ1Start);
-            if (efQ2Start && efQ2End) {
-              overlap = overlap || (q2Start <= efQ2End && q2End >= efQ2Start);
+            if (q2Start && q2End) {
+              overlap = overlap || (q2Start <= efQ1End && q2End >= efQ1Start);
+              if (efQ2Start && efQ2End) {
+                overlap = overlap || (q2Start <= efQ2End && q2End >= efQ2Start);
+              }
             }
 
             if (overlap) {
@@ -688,8 +690,8 @@ export function FeriasDialog({ open, onOpenChange, ferias, anoReferencia, onSucc
         colaborador_id: data.colaborador_id,
         quinzena1_inicio: data.quinzena1_inicio,
         quinzena1_fim: data.quinzena1_fim,
-        quinzena2_inicio: data.quinzena2_inicio,
-        quinzena2_fim: data.quinzena2_fim,
+        quinzena2_inicio: data.quinzena2_inicio || null,
+        quinzena2_fim: data.quinzena2_fim || null,
         gozo_diferente: gozoDiferente,
         gozo_quinzena1_inicio: gozoQ1Inicio,
         gozo_quinzena1_fim: gozoQ1Fim,
@@ -764,12 +766,14 @@ export function FeriasDialog({ open, onOpenChange, ferias, anoReferencia, onSucc
       errors.push("Férias em janeiro ou dezembro requerem exceção");
     }
 
-    const q2Start = parseISO(data.quinzena2_inicio);
-    const q2Month = q2Start.getMonth() + 1;
-    if (q2Month === 1 || q2Month === 12) {
-      requiresException = true;
-      exceptionReason = "mes_bloqueado";
-      errors.push("Férias em janeiro ou dezembro requerem exceção");
+    if (data.quinzena2_inicio) {
+      const q2Start = parseISO(data.quinzena2_inicio);
+      const q2Month = q2Start.getMonth() + 1;
+      if (q2Month === 1 || q2Month === 12) {
+        requiresException = true;
+        exceptionReason = "mes_bloqueado";
+        errors.push("Férias em janeiro ou dezembro requerem exceção");
+      }
     }
 
     if (data.opcao_adicional === "vender" && data.dias_vendidos && data.dias_vendidos > 10) {
@@ -792,10 +796,6 @@ export function FeriasDialog({ open, onOpenChange, ferias, anoReferencia, onSucc
     }
     if (data.is_excecao && (!data.excecao_motivo || !data.excecao_justificativa)) {
       toast.error("Preencha o motivo e justificativa da exceção");
-      return;
-    }
-    if (!data.quinzena2_inicio) {
-      toast.error("Preencha a data de início do 2º período");
       return;
     }
     if (gozoDateError) {
