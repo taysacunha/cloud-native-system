@@ -107,6 +107,11 @@ export function FeriasDialog({ open, onOpenChange, ferias, anoReferencia, onSucc
   const [checkingConflicts, setCheckingConflicts] = useState(false);
   const [comboboxOpen, setComboboxOpen] = useState(false);
   const [gozoDateError, setGozoDateError] = useState<string | null>(null);
+  // Exception flexible periods state
+  const [excecaoTipo, setExcecaoTipo] = useState<"vender" | "gozo_diferente" | null>(null);
+  const [excDistribuicaoTipo, setExcDistribuicaoTipo] = useState("");
+  const [excDiasVendidos, setExcDiasVendidos] = useState(0);
+  const [excPeriodos, setExcPeriodos] = useState<GozoPeriodo[]>([]);
 
   const form = useForm<FeriasFormData>({
     resolver: zodResolver(feriasSchema),
