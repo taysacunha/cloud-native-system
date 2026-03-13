@@ -1075,29 +1075,44 @@ export function FeriasDialog({ open, onOpenChange, ferias, anoReferencia, onSucc
 
             <Separator />
 
-            {/* ===== SEÇÃO 3: Vender dias de férias (RadioGroup) ===== */}
-            <div className="space-y-4">
-              <p className="text-sm font-medium">Vender dias de férias</p>
-              <RadioGroup
-                value={opcaoAdicional}
-                onValueChange={(v) => form.setValue("opcao_adicional", v as any)}
-                className="flex flex-col gap-3"
-              >
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="nenhum" id="opcao-nenhum" />
-                  <Label htmlFor="opcao-nenhum">Nenhum</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="vender" id="opcao-vender" />
-                  <Label htmlFor="opcao-vender">Vender dias de férias</Label>
-                </div>
-                {isExcecao && (
+            {/* ===== SEÇÃO 3: Opções adicionais ===== */}
+            {isExcecao ? (
+              /* ===== EXCEPTION MODE: New flexible periods UI ===== */
+              <div className="space-y-4">
+                <p className="text-sm font-medium">Opções de exceção</p>
+                <ExcecaoPeriodosSection
+                  excecaoTipo={excecaoTipo}
+                  onExcecaoTipoChange={setExcecaoTipo}
+                  distribuicaoTipo={excDistribuicaoTipo}
+                  onDistribuicaoTipoChange={setExcDistribuicaoTipo}
+                  diasVendidos={excDiasVendidos}
+                  onDiasVendidosChange={setExcDiasVendidos}
+                  periodos={excPeriodos}
+                  onPeriodosChange={setExcPeriodos}
+                  q1Inicio={q1Inicio}
+                  q1Fim={q1Fim}
+                  q2Inicio={q2Inicio}
+                  q2Fim={q2Fim}
+                />
+              </div>
+            ) : (
+              /* ===== STANDARD MODE: Original RadioGroup ===== */
+              <div className="space-y-4">
+                <p className="text-sm font-medium">Vender dias de férias</p>
+                <RadioGroup
+                  value={opcaoAdicional}
+                  onValueChange={(v) => form.setValue("opcao_adicional", v as any)}
+                  className="flex flex-col gap-3"
+                >
                   <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="gozo_diferente" id="opcao-gozo" />
-                    <Label htmlFor="opcao-gozo">Gozo em datas diferentes</Label>
+                    <RadioGroupItem value="nenhum" id="opcao-nenhum" />
+                    <Label htmlFor="opcao-nenhum">Nenhum</Label>
                   </div>
-                )}
-              </RadioGroup>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="vender" id="opcao-vender" />
+                    <Label htmlFor="opcao-vender">Vender dias de férias</Label>
+                  </div>
+                </RadioGroup>
 
               {/* ===== VENDA PADRÃO (<=10 dias) ===== */}
               {isVendaPadrao && (
