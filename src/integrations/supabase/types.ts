@@ -1159,9 +1159,11 @@ export type Database = {
           created_at: string | null
           created_by: string | null
           dias_vendidos: number | null
+          distribuicao_tipo: string | null
           excecao_justificativa: string | null
           excecao_motivo: string | null
           gozo_diferente: boolean | null
+          gozo_flexivel: boolean | null
           gozo_quinzena1_fim: string | null
           gozo_quinzena1_inicio: string | null
           gozo_quinzena2_fim: string | null
@@ -1174,8 +1176,8 @@ export type Database = {
           quinzena_venda: number | null
           quinzena1_fim: string
           quinzena1_inicio: string
-          quinzena2_fim: string
-          quinzena2_inicio: string
+          quinzena2_fim: string | null
+          quinzena2_inicio: string | null
           status: string | null
           updated_at: string | null
           vender_dias: boolean | null
@@ -1185,9 +1187,11 @@ export type Database = {
           created_at?: string | null
           created_by?: string | null
           dias_vendidos?: number | null
+          distribuicao_tipo?: string | null
           excecao_justificativa?: string | null
           excecao_motivo?: string | null
           gozo_diferente?: boolean | null
+          gozo_flexivel?: boolean | null
           gozo_quinzena1_fim?: string | null
           gozo_quinzena1_inicio?: string | null
           gozo_quinzena2_fim?: string | null
@@ -1200,8 +1204,8 @@ export type Database = {
           quinzena_venda?: number | null
           quinzena1_fim: string
           quinzena1_inicio: string
-          quinzena2_fim: string
-          quinzena2_inicio: string
+          quinzena2_fim?: string | null
+          quinzena2_inicio?: string | null
           status?: string | null
           updated_at?: string | null
           vender_dias?: boolean | null
@@ -1211,9 +1215,11 @@ export type Database = {
           created_at?: string | null
           created_by?: string | null
           dias_vendidos?: number | null
+          distribuicao_tipo?: string | null
           excecao_justificativa?: string | null
           excecao_motivo?: string | null
           gozo_diferente?: boolean | null
+          gozo_flexivel?: boolean | null
           gozo_quinzena1_fim?: string | null
           gozo_quinzena1_inicio?: string | null
           gozo_quinzena2_fim?: string | null
@@ -1226,8 +1232,8 @@ export type Database = {
           quinzena_venda?: number | null
           quinzena1_fim?: string
           quinzena1_inicio?: string
-          quinzena2_fim?: string
-          quinzena2_inicio?: string
+          quinzena2_fim?: string | null
+          quinzena2_inicio?: string | null
           status?: string | null
           updated_at?: string | null
           vender_dias?: boolean | null
@@ -1495,6 +1501,50 @@ export type Database = {
             columns: ["colaborador_id"]
             isOneToOne: false
             referencedRelation: "ferias_colaboradores"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ferias_gozo_periodos: {
+        Row: {
+          created_at: string | null
+          data_fim: string
+          data_inicio: string
+          dias: number
+          ferias_id: string
+          id: string
+          numero: number
+          referencia_periodo: number | null
+          tipo: string
+        }
+        Insert: {
+          created_at?: string | null
+          data_fim: string
+          data_inicio: string
+          dias: number
+          ferias_id: string
+          id?: string
+          numero?: number
+          referencia_periodo?: number | null
+          tipo: string
+        }
+        Update: {
+          created_at?: string | null
+          data_fim?: string
+          data_inicio?: string
+          dias?: number
+          ferias_id?: string
+          id?: string
+          numero?: number
+          referencia_periodo?: number | null
+          tipo?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ferias_gozo_periodos_ferias_id_fkey"
+            columns: ["ferias_id"]
+            isOneToOne: false
+            referencedRelation: "ferias_ferias"
             referencedColumns: ["id"]
           },
         ]
