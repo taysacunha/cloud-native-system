@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
+import { ExcecaoPeriodosSection, type GozoPeriodo } from "./ExcecaoPeriodosSection";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -106,6 +107,11 @@ export function FeriasDialog({ open, onOpenChange, ferias, anoReferencia, onSucc
   const [checkingConflicts, setCheckingConflicts] = useState(false);
   const [comboboxOpen, setComboboxOpen] = useState(false);
   const [gozoDateError, setGozoDateError] = useState<string | null>(null);
+  // Exception flexible periods state
+  const [excecaoTipo, setExcecaoTipo] = useState<"vender" | "gozo_diferente" | null>(null);
+  const [excDistribuicaoTipo, setExcDistribuicaoTipo] = useState("");
+  const [excDiasVendidos, setExcDiasVendidos] = useState(0);
+  const [excPeriodos, setExcPeriodos] = useState<GozoPeriodo[]>([]);
 
   const form = useForm<FeriasFormData>({
     resolver: zodResolver(feriasSchema),
@@ -470,7 +476,25 @@ export function FeriasDialog({ open, onOpenChange, ferias, anoReferencia, onSucc
     }
     setConflicts([]);
     setGozoDateError(null);
-  }, [ferias, open]);
+    // Reset exception state
+    if (!ferias) {
+      setExcecaoTipo(null);
+      setExcDistribuicaoTipo("");
+      setExcDiasVendidos(0);
+      setExcPeriodos([]);
+    } else if (ferias.gozo_flexivel) {
+      // Restore flexible periods from existing data
+      setExcecaoTipo(ferias.vender_dias ? "vender" : ferias.gozo_diferente ? "gozo_diferente" : null);
+      setExcDistribuicaoTipo(ferias.distribuicao_tipo || "");
+      setExcDiasVendidos(ferias.dias_vendidos || 0);
+      // Periods will be loaded via separate query - initialized empty for now
+      setExcPeriodos([]);
+    } else {
+      setExcecaoTipo(null);
+      setExcDistribuicaoTipo("");
+      setExcDiasVendidos(0);
+      setExcPeriodos([]);
+    }
 
   // Check conflicts
   const checkConflicts = async (data: FeriasFormData) => {
@@ -629,39 +653,74 @@ export function FeriasDialog({ open, onOpenChange, ferias, anoReferencia, onSucc
       let diasVend = 0;
       let quinzenaVendaVal: number | null = null;
       let gozoDiferente = false;
+      let gozoFlexivel = false;
+      let distribuicaoTipoVal: string | null = null;
 
-      if (data.opcao_adicional === "vender" && (data.dias_vendidos || 0) > 0) {
-        venderDias = true;
-        diasVend = data.dias_vendidos || 0;
-        quinzenaVendaVal = data.quinzena_venda || 1;
+      // Exception mode with flexible periods
+      if (data.is_excecao && excecaoTipo) {
+        gozoFlexivel = true;
+        distribuicaoTipoVal = excDistribuicaoTipo || null;
 
-        if (diasVend <= 10) {
-          // Standard sale: gozo only in the sale period
-          if (quinzenaVendaVal === 1) {
-            gozoQ1Inicio = data.gozo_venda_inicio || null;
-            gozoQ1Fim = data.gozo_venda_fim || null;
+        if (excecaoTipo === "vender") {
+          venderDias = true;
+          diasVend = excDiasVendidos;
+          // quinzena_venda not meaningful for flexible, but set for backward compat
+          quinzenaVendaVal = excDistribuicaoTipo === "2" ? 2 : 1;
+          // Set legacy gozo fields from first period if exists (for backward compat)
+          if (excPeriodos.length > 0) {
+            gozoQ1Inicio = excPeriodos[0].data_inicio || null;
+            gozoQ1Fim = excPeriodos[0].data_fim || null;
+          }
+          if (excPeriodos.length > 1) {
+            gozoQ2Inicio = excPeriodos[1].data_inicio || null;
+            gozoQ2Fim = excPeriodos[1].data_fim || null;
+          }
+        } else if (excecaoTipo === "gozo_diferente") {
+          gozoDiferente = true;
+          const p1 = excPeriodos.filter(p => p.referencia_periodo === 1);
+          const p2 = excPeriodos.filter(p => p.referencia_periodo === 2);
+          if (p1.length > 0) {
+            gozoQ1Inicio = p1[0].data_inicio || null;
+            gozoQ1Fim = p1[p1.length - 1].data_fim || null;
+          }
+          if (p2.length > 0) {
+            gozoQ2Inicio = p2[0].data_inicio || null;
+            gozoQ2Fim = p2[p2.length - 1].data_fim || null;
+          }
+        }
+      } else {
+        // Standard mode - original logic
+        if (data.opcao_adicional === "vender" && (data.dias_vendidos || 0) > 0) {
+          venderDias = true;
+          diasVend = data.dias_vendidos || 0;
+          quinzenaVendaVal = data.quinzena_venda || 1;
+
+          if (diasVend <= 10) {
+            if (quinzenaVendaVal === 1) {
+              gozoQ1Inicio = data.gozo_venda_inicio || null;
+              gozoQ1Fim = data.gozo_venda_fim || null;
+            } else {
+              gozoQ2Inicio = data.gozo_venda_inicio || null;
+              gozoQ2Fim = data.gozo_venda_fim || null;
+            }
           } else {
-            gozoQ2Inicio = data.gozo_venda_inicio || null;
-            gozoQ2Fim = data.gozo_venda_fim || null;
+            gozoQ1Inicio = data.gozo_venda_q1_inicio || null;
+            gozoQ1Fim = data.gozo_venda_q1_fim || null;
+            if (data.gozo_venda_periodos === "2") {
+              gozoQ2Inicio = data.gozo_venda_q2_inicio || null;
+              gozoQ2Fim = data.gozo_venda_q2_fim || null;
+            }
           }
-        } else {
-          // Exception sale: use q1/q2 gozo fields
-          gozoQ1Inicio = data.gozo_venda_q1_inicio || null;
-          gozoQ1Fim = data.gozo_venda_q1_fim || null;
-          if (data.gozo_venda_periodos === "2") {
-            gozoQ2Inicio = data.gozo_venda_q2_inicio || null;
-            gozoQ2Fim = data.gozo_venda_q2_fim || null;
+        } else if (data.opcao_adicional === "gozo_diferente") {
+          gozoDiferente = true;
+          if (data.gozo_periodos === "1" || data.gozo_periodos === "ambos") {
+            gozoQ1Inicio = data.gozo_quinzena1_inicio || null;
+            gozoQ1Fim = data.gozo_quinzena1_fim || null;
           }
-        }
-      } else if (data.opcao_adicional === "gozo_diferente") {
-        gozoDiferente = true;
-        if (data.gozo_periodos === "1" || data.gozo_periodos === "ambos") {
-          gozoQ1Inicio = data.gozo_quinzena1_inicio || null;
-          gozoQ1Fim = data.gozo_quinzena1_fim || null;
-        }
-        if (data.gozo_periodos === "2" || data.gozo_periodos === "ambos") {
-          gozoQ2Inicio = data.gozo_quinzena2_inicio || null;
-          gozoQ2Fim = data.gozo_quinzena2_fim || null;
+          if (data.gozo_periodos === "2" || data.gozo_periodos === "ambos") {
+            gozoQ2Inicio = data.gozo_quinzena2_inicio || null;
+            gozoQ2Fim = data.gozo_quinzena2_fim || null;
+          }
         }
       }
 
@@ -685,14 +744,44 @@ export function FeriasDialog({ open, onOpenChange, ferias, anoReferencia, onSucc
         excecao_justificativa: data.is_excecao ? data.excecao_justificativa : null,
         periodo_aquisitivo_inicio: periodoAquisitivo?.inicio || null,
         periodo_aquisitivo_fim: periodoAquisitivo?.fim || null,
+        gozo_flexivel: gozoFlexivel,
+        distribuicao_tipo: distribuicaoTipoVal,
       };
 
+      let feriasId: string;
       if (isEditing) {
         const { error } = await supabase.from("ferias_ferias").update(payload).eq("id", ferias.id);
         if (error) throw error;
+        feriasId = ferias.id;
       } else {
-        const { error } = await supabase.from("ferias_ferias").insert(payload);
+        const { data: inserted, error } = await supabase.from("ferias_ferias").insert(payload).select("id").single();
         if (error) throw error;
+        feriasId = inserted.id;
+      }
+
+      // Save flexible periods if applicable
+      if (gozoFlexivel && excPeriodos.length > 0) {
+        // Delete existing periods
+        await supabase.from("ferias_gozo_periodos" as any).delete().eq("ferias_id", feriasId);
+        // Insert new periods
+        const periodosPayload = excPeriodos
+          .filter(p => p.data_inicio && p.data_fim && p.dias > 0)
+          .map((p, idx) => ({
+            ferias_id: feriasId,
+            tipo: excecaoTipo,
+            referencia_periodo: p.referencia_periodo || null,
+            numero: idx + 1,
+            dias: p.dias,
+            data_inicio: p.data_inicio,
+            data_fim: p.data_fim,
+          }));
+        if (periodosPayload.length > 0) {
+          const { error: pError } = await supabase.from("ferias_gozo_periodos" as any).insert(periodosPayload);
+          if (pError) throw pError;
+        }
+      } else if (isEditing) {
+        // Clear flexible periods if switching back to standard
+        await supabase.from("ferias_gozo_periodos" as any).delete().eq("ferias_id", feriasId);
       }
     },
     onSuccess: () => {
@@ -778,7 +867,636 @@ export function FeriasDialog({ open, onOpenChange, ferias, anoReferencia, onSucc
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
 
-            {/* ===== SEÇÃO 1: Tipo de Cadastro (Padrão / Exceção) ===== */}
+            {/* SEÇÃO 1: Tipo de Cadastro */}
+            <div className="space-y-3">
+              <p className="text-sm font-medium">Tipo de cadastro</p>
+              <div className="flex gap-2">
+                <Button type="button" variant={!isExcecao ? "default" : "outline"} size="sm"
+                  onClick={() => { form.setValue("is_excecao", false); form.setValue("excecao_motivo", ""); form.setValue("excecao_justificativa", ""); }}>
+                  Padrão
+                </Button>
+                <Button type="button" variant={isExcecao ? "destructive" : "outline"} size="sm"
+                  onClick={() => form.setValue("is_excecao", true)}>
+                  <ShieldAlert className="h-4 w-4 mr-1" /> Exceção
+                </Button>
+              </div>
+              {isExcecao && (
+                <Card className="border-destructive/30 bg-destructive/5">
+                  <CardContent className="pt-4 space-y-3">
+                    <FormField control={form.control} name="excecao_motivo" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Motivo da exceção *</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl><SelectTrigger><SelectValue placeholder="Selecione o motivo" /></SelectTrigger></FormControl>
+                          <SelectContent>
+                            <SelectItem value="mes_bloqueado">Férias em janeiro/dezembro</SelectItem>
+                            <SelectItem value="venda_acima_limite">Venda acima de 10 dias</SelectItem>
+                            <SelectItem value="conflito_setor">Conflito de setor</SelectItem>
+                            <SelectItem value="conflito_equipe">Conflito de equipe</SelectItem>
+                            <SelectItem value="ajuste_setor">Ajuste de setor</SelectItem>
+                            <SelectItem value="periodo_aquisitivo">Período aquisitivo irregular</SelectItem>
+                            <SelectItem value="outro">Outro</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={form.control} name="excecao_justificativa" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Justificativa *</FormLabel>
+                        <FormControl><Textarea placeholder="Descreva a justificativa para a exceção..." {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+
+            <Separator />
+
+            {/* SEÇÃO 2: Colaborador e Períodos Oficiais */}
+            <div className="space-y-4">
+              <FormField control={form.control} name="colaborador_id" render={({ field }) => (
+                <FormItem className="flex flex-col">
+                  <FormLabel>Colaborador *</FormLabel>
+                  <Popover open={comboboxOpen} onOpenChange={setComboboxOpen}>
+                    <PopoverTrigger asChild>
+                      <FormControl>
+                        <Button variant="outline" role="combobox" aria-expanded={comboboxOpen}
+                          className={cn("w-full justify-between", !field.value && "text-muted-foreground")} disabled={isEditing}>
+                          {field.value ? colaboradores.find(c => c.id === field.value)?.nome || "Selecione..." : "Buscar colaborador..."}
+                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </FormControl>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                      <Command>
+                        <CommandInput placeholder="Buscar por nome..." />
+                        <CommandList>
+                          <CommandEmpty>Nenhum colaborador encontrado.</CommandEmpty>
+                          {colaboradoresDisponiveis.map((c) => (
+                            <CommandItem key={c.id} value={c.nome} onSelect={() => { field.onChange(c.id); setComboboxOpen(false); }}>
+                              <Check className={cn("mr-2 h-4 w-4", field.value === c.id ? "opacity-100" : "opacity-0")} />
+                              {c.nome}
+                            </CommandItem>
+                          ))}
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                  <FormMessage />
+                </FormItem>
+              )} />
+
+              {familiarId && feriasFamiliar && feriasFamiliar.length > 0 && (
+                <Alert className="border-primary/20 bg-primary/5">
+                  <Users className="h-4 w-4" />
+                  <AlertTitle>Familiar vinculado: {familiarNome || "—"}</AlertTitle>
+                  <AlertDescription className="text-sm">
+                    <p className="mb-1">Férias do familiar:</p>
+                    <ul className="list-disc list-inside">
+                      {feriasFamiliar.map((ff, i) => {
+                        const q1i = ff.gozo_diferente && ff.gozo_quinzena1_inicio ? ff.gozo_quinzena1_inicio : ff.quinzena1_inicio;
+                        const q1f = ff.gozo_diferente && ff.gozo_quinzena1_fim ? ff.gozo_quinzena1_fim : ff.quinzena1_fim;
+                        const q2i = ff.gozo_diferente && ff.gozo_quinzena2_inicio ? ff.gozo_quinzena2_inicio : ff.quinzena2_inicio;
+                        const q2f = ff.gozo_diferente && ff.gozo_quinzena2_fim ? ff.gozo_quinzena2_fim : ff.quinzena2_fim;
+                        return <li key={i}>1º: {formatDateBR(q1i)} a {formatDateBR(q1f)}{q2i ? ` | 2º: ${formatDateBR(q2i)} a ${formatDateBR(q2f!)}` : ""}</li>;
+                      })}
+                    </ul>
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {familiarId && (!feriasFamiliar || feriasFamiliar.length === 0) && (
+                <Alert className="border-muted">
+                  <Users className="h-4 w-4" />
+                  <AlertTitle>Familiar vinculado: {familiarNome || "—"}</AlertTitle>
+                  <AlertDescription className="text-sm text-muted-foreground">Nenhuma férias cadastrada para o familiar ainda.</AlertDescription>
+                </Alert>
+              )}
+
+              {periodoAquisitivo && (
+                <Card className="border-primary/20 bg-primary/5">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2"><Info className="h-4 w-4 text-primary" />Período Aquisitivo (automático)</CardTitle>
+                  </CardHeader>
+                  <CardContent><p className="text-sm">{formatDateBR(periodoAquisitivo.inicio)} a {formatDateBR(periodoAquisitivo.fim)}</p></CardContent>
+                </Card>
+              )}
+
+              <Card>
+                <CardHeader className="pb-3"><CardTitle className="text-sm">1º Período (15 dias)</CardTitle></CardHeader>
+                <CardContent className="grid grid-cols-2 gap-4">
+                  <FormField control={form.control} name="quinzena1_inicio" render={({ field }) => (
+                    <FormItem><FormLabel>Data de Início *</FormLabel><FormControl><Input type="date" {...field} /></FormControl><FormMessage /></FormItem>
+                  )} />
+                  <FormItem>
+                    <FormLabel>Data de Fim (automático)</FormLabel>
+                    <Input type="date" value={q1Fim} readOnly className="bg-muted cursor-not-allowed" />
+                    {q1Inicio && q1Fim && <p className="text-xs text-muted-foreground mt-1">15 dias a partir de {formatDateBR(q1Inicio)}</p>}
+                  </FormItem>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-3"><CardTitle className="text-sm">2º Período (15 dias)</CardTitle></CardHeader>
+                <CardContent className="grid grid-cols-2 gap-4">
+                  <FormField control={form.control} name="quinzena2_inicio" render={({ field }) => (
+                    <FormItem><FormLabel>Data de Início *</FormLabel><FormControl><Input type="date" {...field} /></FormControl><FormMessage /></FormItem>
+                  )} />
+                  <FormItem>
+                    <FormLabel>Data de Fim (automático)</FormLabel>
+                    <Input type="date" value={q2Fim} readOnly className="bg-muted cursor-not-allowed" />
+                    {q2Inicio && q2Fim && <p className="text-xs text-muted-foreground mt-1">15 dias a partir de {formatDateBR(q2Inicio)}</p>}
+                  </FormItem>
+                </CardContent>
+              </Card>
+            </div>
+
+            <Separator />
+
+            {/* SEÇÃO 3: Opções adicionais */}
+            {isExcecao ? (
+              <div className="space-y-4">
+                <p className="text-sm font-medium">Opções de exceção</p>
+                <ExcecaoPeriodosSection
+                  excecaoTipo={excecaoTipo}
+                  onExcecaoTipoChange={setExcecaoTipo}
+                  distribuicaoTipo={excDistribuicaoTipo}
+                  onDistribuicaoTipoChange={setExcDistribuicaoTipo}
+                  diasVendidos={excDiasVendidos}
+                  onDiasVendidosChange={setExcDiasVendidos}
+                  periodos={excPeriodos}
+                  onPeriodosChange={setExcPeriodos}
+                  q1Inicio={q1Inicio}
+                  q1Fim={q1Fim}
+                  q2Inicio={q2Inicio}
+                  q2Fim={q2Fim}
+                />
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <p className="text-sm font-medium">Vender dias de férias</p>
+                <RadioGroup value={opcaoAdicional} onValueChange={(v) => form.setValue("opcao_adicional", v as any)} className="flex flex-col gap-3">
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="nenhum" id="opcao-nenhum" />
+                    <Label htmlFor="opcao-nenhum">Nenhum</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="vender" id="opcao-vender" />
+                    <Label htmlFor="opcao-vender">Vender dias de férias</Label>
+                  </div>
+                </RadioGroup>
+
+                {isVendaPadrao && (
+                  <div className="space-y-4 pl-7 border-l-2 border-primary/20">
+                    <FormField control={form.control} name="dias_vendidos" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Quantidade de dias a vender (máx. 10)</FormLabel>
+                        <FormControl>
+                          <Input type="number" min={1} max={10} {...field} value={field.value ?? 0}
+                            onChange={(e) => field.onChange(Math.min(10, Math.max(0, parseInt(e.target.value) || 0)))} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+
+                    <FormField control={form.control} name="quinzena_venda" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Período da venda</FormLabel>
+                        <Select onValueChange={(v) => { field.onChange(parseInt(v)); form.setValue("gozo_venda_inicio", ""); form.setValue("gozo_venda_fim", ""); setGozoDateError(null); }} value={String(field.value || 1)}>
+                          <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                          <SelectContent>
+                            <SelectItem value="1">1º Período</SelectItem>
+                            <SelectItem value="2">2º Período</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+
+                    <Alert className="border-primary/30 bg-primary/5">
+                      <Info className="h-4 w-4 text-primary" />
+                      <AlertDescription className="text-sm">
+                        O {outroPeriodoLabel} período será gozado integralmente (15 dias). No {periodoVendaLabel} período, serão gozados {diasGozoNoPeriodoVenda} dia{diasGozoNoPeriodoVenda !== 1 ? "s" : ""}.
+                      </AlertDescription>
+                    </Alert>
+
+                    {diasGozoNoPeriodoVenda > 0 && (
+                      <Card className="border-primary/20 bg-primary/5">
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm text-primary">
+                            Gozo do {periodoVendaLabel} período — {diasGozoNoPeriodoVenda} dia{diasGozoNoPeriodoVenda !== 1 ? "s" : ""}
+                          </CardTitle>
+                          {((quinzenaVenda === 1 && q1Inicio && q1Fim) || (quinzenaVenda === 2 && q2Inicio && q2Fim)) && (
+                            <p className="text-xs text-muted-foreground">
+                              Período oficial: {formatDateBR(quinzenaVenda === 1 ? q1Inicio : q2Inicio)} a {formatDateBR(quinzenaVenda === 1 ? q1Fim : q2Fim)}
+                            </p>
+                          )}
+                        </CardHeader>
+                        <CardContent className="grid grid-cols-2 gap-4">
+                          <FormField control={form.control} name="gozo_venda_inicio" render={({ field }) => (
+                            <FormItem><FormLabel>Data de Início do Gozo</FormLabel><FormControl><Input type="date" {...field} /></FormControl><FormMessage /></FormItem>
+                          )} />
+                          <FormItem>
+                            <FormLabel>Data de Fim (automático)</FormLabel>
+                            <Input type="date" value={form.watch("gozo_venda_fim") || ""} readOnly className="bg-muted cursor-not-allowed" />
+                          </FormItem>
+                        </CardContent>
+                        {gozoDateError && (
+                          <div className="px-6 pb-4">
+                            <Alert variant="destructive"><AlertTriangle className="h-4 w-4" /><AlertDescription className="text-sm">{gozoDateError}</AlertDescription></Alert>
+                          </div>
+                        )}
+                      </Card>
+                    )}
+
+                    <Card className="border-muted bg-muted/30">
+                      <CardContent className="pt-4 space-y-2">
+                        <div className="flex justify-between text-sm"><span>Dias totais de férias:</span><span className="font-semibold">30 dias</span></div>
+                        <div className="flex justify-between text-sm text-destructive"><span>Dias vendidos ({periodoVendaLabel} período):</span><span className="font-semibold">-{diasVendidos} dias</span></div>
+                        <div className="border-t pt-2 flex justify-between text-sm font-bold"><span>Dias de gozo:</span><span>{diasGozo} dias ({outroPeriodoLabel}: 15 + {periodoVendaLabel}: {diasGozoNoPeriodoVenda})</span></div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                )}
+
+                {isVenda && diasVendidos === 0 && (
+                  <div className="space-y-4 pl-7 border-l-2 border-primary/20">
+                    <FormField control={form.control} name="dias_vendidos" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Quantidade de dias a vender (máx. 10)</FormLabel>
+                        <FormControl>
+                          <Input type="number" min={1} max={10} {...field} value={field.value ?? 0}
+                            onChange={(e) => field.onChange(Math.min(10, Math.max(0, parseInt(e.target.value) || 0)))} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* SEÇÃO 4: Conflitos */}
+            {conflicts.length > 0 && (
+              <>
+                <Separator />
+                <Alert variant="destructive">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertTitle>Conflitos Detectados</AlertTitle>
+                  <AlertDescription>
+                    <ul className="list-disc list-inside mt-2 space-y-1">
+                      {conflicts.map((c, i) => (
+                        <li key={i}><strong>{c.colaborador_nome}</strong> ({c.tipo}): {c.periodo}</li>
+                      ))}
+                    </ul>
+                    <p className="mt-2 text-sm">Marque como "Exceção" no topo se deseja prosseguir.</p>
+                  </AlertDescription>
+                </Alert>
+              </>
+            )}
+
+            <div className="flex justify-end gap-3 pt-4 border-t">
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
+              <Button type="submit" disabled={mutation.isPending || !!gozoDateError}>
+                {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {isEditing ? "Salvar" : "Cadastrar"}
+              </Button>
+            </div>
+          </form>
+        </Form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+            <div className="space-y-3">
+              <p className="text-sm font-medium">Tipo de cadastro</p>
+              <div className="flex gap-2">
+                <Button type="button" variant={!isExcecao ? "default" : "outline"} size="sm"
+                  onClick={() => { form.setValue("is_excecao", false); form.setValue("excecao_motivo", ""); form.setValue("excecao_justificativa", ""); }}>
+                  Padrão
+                </Button>
+                <Button type="button" variant={isExcecao ? "destructive" : "outline"} size="sm"
+                  onClick={() => form.setValue("is_excecao", true)}>
+                  <ShieldAlert className="h-4 w-4 mr-1" />
+                  Exceção
+                </Button>
+              </div>
+
+              {isExcecao && (
+                <Card className="border-destructive/30 bg-destructive/5">
+                  <CardContent className="pt-4 space-y-3">
+                    <FormField control={form.control} name="excecao_motivo" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Motivo da exceção *</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl><SelectTrigger><SelectValue placeholder="Selecione o motivo" /></SelectTrigger></FormControl>
+                          <SelectContent>
+                            <SelectItem value="mes_bloqueado">Férias em janeiro/dezembro</SelectItem>
+                            <SelectItem value="venda_acima_limite">Venda acima de 10 dias</SelectItem>
+                            <SelectItem value="conflito_setor">Conflito de setor</SelectItem>
+                            <SelectItem value="conflito_equipe">Conflito de equipe</SelectItem>
+                            <SelectItem value="ajuste_setor">Ajuste de setor</SelectItem>
+                            <SelectItem value="periodo_aquisitivo">Período aquisitivo irregular</SelectItem>
+                            <SelectItem value="outro">Outro</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                    <FormField control={form.control} name="excecao_justificativa" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Justificativa *</FormLabel>
+                        <FormControl><Textarea placeholder="Descreva a justificativa para a exceção..." {...field} /></FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+
+            <Separator />
+
+            {/* ===== SEÇÃO 2: Colaborador e Períodos Oficiais ===== */}
+            <div className="space-y-4">
+              <FormField control={form.control} name="colaborador_id" render={({ field }) => (
+                <FormItem className="flex flex-col">
+                  <FormLabel>Colaborador *</FormLabel>
+                  <Popover open={comboboxOpen} onOpenChange={setComboboxOpen}>
+                    <PopoverTrigger asChild>
+                      <FormControl>
+                        <Button variant="outline" role="combobox" aria-expanded={comboboxOpen}
+                          className={cn("w-full justify-between", !field.value && "text-muted-foreground")} disabled={isEditing}>
+                          {field.value ? colaboradores.find(c => c.id === field.value)?.nome || "Selecione..." : "Buscar colaborador..."}
+                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </FormControl>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                      <Command>
+                        <CommandInput placeholder="Buscar por nome..." />
+                        <CommandList>
+                          <CommandEmpty>Nenhum colaborador encontrado.</CommandEmpty>
+                          {colaboradoresDisponiveis.map((c) => (
+                            <CommandItem key={c.id} value={c.nome} onSelect={() => { field.onChange(c.id); setComboboxOpen(false); }}>
+                              <Check className={cn("mr-2 h-4 w-4", field.value === c.id ? "opacity-100" : "opacity-0")} />
+                              {c.nome}
+                            </CommandItem>
+                          ))}
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                  <FormMessage />
+                </FormItem>
+              )} />
+
+              {/* Familiar info */}
+              {familiarId && feriasFamiliar && feriasFamiliar.length > 0 && (
+                <Alert className="border-primary/20 bg-primary/5">
+                  <Users className="h-4 w-4" />
+                  <AlertTitle>Familiar vinculado: {familiarNome || "—"}</AlertTitle>
+                  <AlertDescription className="text-sm">
+                    <p className="mb-1">Férias do familiar:</p>
+                    <ul className="list-disc list-inside">
+                      {feriasFamiliar.map((ff, i) => {
+                        const q1i = ff.gozo_diferente && ff.gozo_quinzena1_inicio ? ff.gozo_quinzena1_inicio : ff.quinzena1_inicio;
+                        const q1f = ff.gozo_diferente && ff.gozo_quinzena1_fim ? ff.gozo_quinzena1_fim : ff.quinzena1_fim;
+                        const q2i = ff.gozo_diferente && ff.gozo_quinzena2_inicio ? ff.gozo_quinzena2_inicio : ff.quinzena2_inicio;
+                        const q2f = ff.gozo_diferente && ff.gozo_quinzena2_fim ? ff.gozo_quinzena2_fim : ff.quinzena2_fim;
+                        return (
+                          <li key={i}>1º: {formatDateBR(q1i)} a {formatDateBR(q1f)}{q2i ? ` | 2º: ${formatDateBR(q2i)} a ${formatDateBR(q2f!)}` : ""}</li>
+                        );
+                      })}
+                    </ul>
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {familiarId && (!feriasFamiliar || feriasFamiliar.length === 0) && (
+                <Alert className="border-muted">
+                  <Users className="h-4 w-4" />
+                  <AlertTitle>Familiar vinculado: {familiarNome || "—"}</AlertTitle>
+                  <AlertDescription className="text-sm text-muted-foreground">Nenhuma férias cadastrada para o familiar ainda.</AlertDescription>
+                </Alert>
+              )}
+
+              {periodoAquisitivo && (
+                <Card className="border-primary/20 bg-primary/5">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <Info className="h-4 w-4 text-primary" />
+                      Período Aquisitivo (automático)
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm">{formatDateBR(periodoAquisitivo.inicio)} a {formatDateBR(periodoAquisitivo.fim)}</p>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* 1º Período Oficial */}
+              <Card>
+                <CardHeader className="pb-3"><CardTitle className="text-sm">1º Período (15 dias)</CardTitle></CardHeader>
+                <CardContent className="grid grid-cols-2 gap-4">
+                  <FormField control={form.control} name="quinzena1_inicio" render={({ field }) => (
+                    <FormItem><FormLabel>Data de Início *</FormLabel><FormControl><Input type="date" {...field} /></FormControl><FormMessage /></FormItem>
+                  )} />
+                  <FormItem>
+                    <FormLabel>Data de Fim (automático)</FormLabel>
+                    <Input type="date" value={q1Fim} readOnly className="bg-muted cursor-not-allowed" />
+                    {q1Inicio && q1Fim && <p className="text-xs text-muted-foreground mt-1">15 dias a partir de {formatDateBR(q1Inicio)}</p>}
+                  </FormItem>
+                </CardContent>
+              </Card>
+
+              {/* 2º Período Oficial */}
+              <Card>
+                <CardHeader className="pb-3"><CardTitle className="text-sm">2º Período (15 dias)</CardTitle></CardHeader>
+                <CardContent className="grid grid-cols-2 gap-4">
+                  <FormField control={form.control} name="quinzena2_inicio" render={({ field }) => (
+                    <FormItem><FormLabel>Data de Início *</FormLabel><FormControl><Input type="date" {...field} /></FormControl><FormMessage /></FormItem>
+                  )} />
+                  <FormItem>
+                    <FormLabel>Data de Fim (automático)</FormLabel>
+                    <Input type="date" value={q2Fim} readOnly className="bg-muted cursor-not-allowed" />
+                    {q2Inicio && q2Fim && <p className="text-xs text-muted-foreground mt-1">15 dias a partir de {formatDateBR(q2Inicio)}</p>}
+                  </FormItem>
+                </CardContent>
+              </Card>
+            </div>
+
+            <Separator />
+
+            {/* ===== SEÇÃO 3: Opções adicionais ===== */}
+            {isExcecao ? (
+              <div className="space-y-4">
+                <p className="text-sm font-medium">Opções de exceção</p>
+                <ExcecaoPeriodosSection
+                  excecaoTipo={excecaoTipo}
+                  onExcecaoTipoChange={setExcecaoTipo}
+                  distribuicaoTipo={excDistribuicaoTipo}
+                  onDistribuicaoTipoChange={setExcDistribuicaoTipo}
+                  diasVendidos={excDiasVendidos}
+                  onDiasVendidosChange={setExcDiasVendidos}
+                  periodos={excPeriodos}
+                  onPeriodosChange={setExcPeriodos}
+                  q1Inicio={q1Inicio}
+                  q1Fim={q1Fim}
+                  q2Inicio={q2Inicio}
+                  q2Fim={q2Fim}
+                />
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <p className="text-sm font-medium">Vender dias de férias</p>
+                <RadioGroup value={opcaoAdicional} onValueChange={(v) => form.setValue("opcao_adicional", v as any)} className="flex flex-col gap-3">
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="nenhum" id="opcao-nenhum" />
+                    <Label htmlFor="opcao-nenhum">Nenhum</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="vender" id="opcao-vender" />
+                    <Label htmlFor="opcao-vender">Vender dias de férias</Label>
+                  </div>
+                </RadioGroup>
+
+                {/* VENDA PADRÃO (<=10 dias) */}
+                {isVendaPadrao && (
+                  <div className="space-y-4 pl-7 border-l-2 border-primary/20">
+                    <FormField control={form.control} name="dias_vendidos" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Quantidade de dias a vender (máx. 10)</FormLabel>
+                        <FormControl>
+                          <Input type="number" min={1} max={10} {...field} value={field.value ?? 0}
+                            onChange={(e) => field.onChange(Math.min(10, Math.max(0, parseInt(e.target.value) || 0)))} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+
+                    <FormField control={form.control} name="quinzena_venda" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Período da venda</FormLabel>
+                        <Select onValueChange={(v) => { field.onChange(parseInt(v)); form.setValue("gozo_venda_inicio", ""); form.setValue("gozo_venda_fim", ""); setGozoDateError(null); }} value={String(field.value || 1)}>
+                          <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                          <SelectContent>
+                            <SelectItem value="1">1º Período</SelectItem>
+                            <SelectItem value="2">2º Período</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+
+                    <Alert className="border-primary/30 bg-primary/5">
+                      <Info className="h-4 w-4 text-primary" />
+                      <AlertDescription className="text-sm">
+                        O {outroPeriodoLabel} período será gozado integralmente (15 dias). No {periodoVendaLabel} período, serão gozados {diasGozoNoPeriodoVenda} dia{diasGozoNoPeriodoVenda !== 1 ? "s" : ""}.
+                      </AlertDescription>
+                    </Alert>
+
+                    {diasGozoNoPeriodoVenda > 0 && (
+                      <Card className="border-primary/20 bg-primary/5">
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm text-primary">
+                            Gozo do {periodoVendaLabel} período — {diasGozoNoPeriodoVenda} dia{diasGozoNoPeriodoVenda !== 1 ? "s" : ""}
+                          </CardTitle>
+                          {((quinzenaVenda === 1 && q1Inicio && q1Fim) || (quinzenaVenda === 2 && q2Inicio && q2Fim)) && (
+                            <p className="text-xs text-muted-foreground">
+                              Período oficial: {formatDateBR(quinzenaVenda === 1 ? q1Inicio : q2Inicio)} a {formatDateBR(quinzenaVenda === 1 ? q1Fim : q2Fim)}
+                            </p>
+                          )}
+                        </CardHeader>
+                        <CardContent className="grid grid-cols-2 gap-4">
+                          <FormField control={form.control} name="gozo_venda_inicio" render={({ field }) => (
+                            <FormItem><FormLabel>Data de Início do Gozo</FormLabel><FormControl><Input type="date" {...field} /></FormControl><FormMessage /></FormItem>
+                          )} />
+                          <FormItem>
+                            <FormLabel>Data de Fim (automático)</FormLabel>
+                            <Input type="date" value={form.watch("gozo_venda_fim") || ""} readOnly className="bg-muted cursor-not-allowed" />
+                          </FormItem>
+                        </CardContent>
+                        {gozoDateError && (
+                          <div className="px-6 pb-4">
+                            <Alert variant="destructive">
+                              <AlertTriangle className="h-4 w-4" />
+                              <AlertDescription className="text-sm">{gozoDateError}</AlertDescription>
+                            </Alert>
+                          </div>
+                        )}
+                      </Card>
+                    )}
+
+                    <Card className="border-muted bg-muted/30">
+                      <CardContent className="pt-4 space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span>Dias totais de férias:</span><span className="font-semibold">30 dias</span>
+                        </div>
+                        <div className="flex justify-between text-sm text-destructive">
+                          <span>Dias vendidos ({periodoVendaLabel} período):</span><span className="font-semibold">-{diasVendidos} dias</span>
+                        </div>
+                        <div className="border-t pt-2 flex justify-between text-sm font-bold">
+                          <span>Dias de gozo:</span><span>{diasGozo} dias ({outroPeriodoLabel}: 15 + {periodoVendaLabel}: {diasGozoNoPeriodoVenda})</span>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                )}
+
+                {/* Initial venda state (0 days) */}
+                {isVenda && diasVendidos === 0 && (
+                  <div className="space-y-4 pl-7 border-l-2 border-primary/20">
+                    <FormField control={form.control} name="dias_vendidos" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Quantidade de dias a vender (máx. 10)</FormLabel>
+                        <FormControl>
+                          <Input type="number" min={1} max={10} {...field} value={field.value ?? 0}
+                            onChange={(e) => field.onChange(Math.min(10, Math.max(0, parseInt(e.target.value) || 0)))} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ===== SEÇÃO 4: Conflitos ===== */}
+            {conflicts.length > 0 && (
+              <>
+                <Separator />
+                <Alert variant="destructive">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertTitle>Conflitos Detectados</AlertTitle>
+                  <AlertDescription>
+                    <ul className="list-disc list-inside mt-2 space-y-1">
+                      {conflicts.map((c, i) => (
+                        <li key={i}><strong>{c.colaborador_nome}</strong> ({c.tipo}): {c.periodo}</li>
+                      ))}
+                    </ul>
+                    <p className="mt-2 text-sm">Marque como "Exceção" no topo se deseja prosseguir.</p>
+                  </AlertDescription>
+                </Alert>
+              </>
+            )}
+
+            <div className="flex justify-end gap-3 pt-4 border-t">
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
+              <Button type="submit" disabled={mutation.isPending || !!gozoDateError}>
+                {mutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {isEditing ? "Salvar" : "Cadastrar"}
+              </Button>
+            </div>
+          </form>
+        </Form>
+      </DialogContent>
+    </Dialog>
+  );
+}
             <div className="space-y-3">
               <p className="text-sm font-medium">Tipo de cadastro</p>
               <div className="flex gap-2">
@@ -986,175 +1704,163 @@ export function FeriasDialog({ open, onOpenChange, ferias, anoReferencia, onSucc
 
             <Separator />
 
-            {/* ===== SEÇÃO 3: Vender dias de férias (RadioGroup) ===== */}
-            <div className="space-y-4">
-              <p className="text-sm font-medium">Vender dias de férias</p>
-              <RadioGroup
-                value={opcaoAdicional}
-                onValueChange={(v) => form.setValue("opcao_adicional", v as any)}
-                className="flex flex-col gap-3"
-              >
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="nenhum" id="opcao-nenhum" />
-                  <Label htmlFor="opcao-nenhum">Nenhum</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <RadioGroupItem value="vender" id="opcao-vender" />
-                  <Label htmlFor="opcao-vender">Vender dias de férias</Label>
-                </div>
-                {isExcecao && (
+            {/* ===== SEÇÃO 3: Opções adicionais ===== */}
+            {isExcecao ? (
+              /* ===== EXCEPTION MODE: New flexible periods UI ===== */
+              <div className="space-y-4">
+                <p className="text-sm font-medium">Opções de exceção</p>
+                <ExcecaoPeriodosSection
+                  excecaoTipo={excecaoTipo}
+                  onExcecaoTipoChange={setExcecaoTipo}
+                  distribuicaoTipo={excDistribuicaoTipo}
+                  onDistribuicaoTipoChange={setExcDistribuicaoTipo}
+                  diasVendidos={excDiasVendidos}
+                  onDiasVendidosChange={setExcDiasVendidos}
+                  periodos={excPeriodos}
+                  onPeriodosChange={setExcPeriodos}
+                  q1Inicio={q1Inicio}
+                  q1Fim={q1Fim}
+                  q2Inicio={q2Inicio}
+                  q2Fim={q2Fim}
+                />
+              </div>
+            ) : (
+              /* ===== STANDARD MODE: Original RadioGroup ===== */
+              <div className="space-y-4">
+                <p className="text-sm font-medium">Vender dias de férias</p>
+                <RadioGroup
+                  value={opcaoAdicional}
+                  onValueChange={(v) => form.setValue("opcao_adicional", v as any)}
+                  className="flex flex-col gap-3"
+                >
                   <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="gozo_diferente" id="opcao-gozo" />
-                    <Label htmlFor="opcao-gozo">Gozo em datas diferentes</Label>
+                    <RadioGroupItem value="nenhum" id="opcao-nenhum" />
+                    <Label htmlFor="opcao-nenhum">Nenhum</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="vender" id="opcao-vender" />
+                    <Label htmlFor="opcao-vender">Vender dias de férias</Label>
+                  </div>
+                </RadioGroup>
+
+                {/* ===== VENDA PADRÃO (<=10 dias) ===== */}
+                {isVendaPadrao && (
+                  <div className="space-y-4 pl-7 border-l-2 border-primary/20">
+                    <FormField control={form.control} name="dias_vendidos" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Quantidade de dias a vender (máx. 10)</FormLabel>
+                        <FormControl>
+                          <Input type="number" min={1} max={10} {...field}
+                            value={field.value ?? 0}
+                            onChange={(e) => field.onChange(Math.min(10, Math.max(0, parseInt(e.target.value) || 0)))}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+
+                    <FormField control={form.control} name="quinzena_venda" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Período da venda</FormLabel>
+                        <Select onValueChange={(v) => {
+                          field.onChange(parseInt(v));
+                          form.setValue("gozo_venda_inicio", "");
+                          form.setValue("gozo_venda_fim", "");
+                          setGozoDateError(null);
+                        }} value={String(field.value || 1)}>
+                          <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                          <SelectContent>
+                            <SelectItem value="1">1º Período</SelectItem>
+                            <SelectItem value="2">2º Período</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+
+                    <Alert className="border-primary/30 bg-primary/5">
+                      <Info className="h-4 w-4 text-primary" />
+                      <AlertDescription className="text-sm">
+                        O {outroPeriodoLabel} período será gozado integralmente (15 dias). No {periodoVendaLabel} período, serão gozados {diasGozoNoPeriodoVenda} dia{diasGozoNoPeriodoVenda !== 1 ? "s" : ""}.
+                      </AlertDescription>
+                    </Alert>
+
+                    {diasGozoNoPeriodoVenda > 0 && (
+                      <Card className="border-primary/20 bg-primary/5">
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm text-primary">
+                            Gozo do {periodoVendaLabel} período — {diasGozoNoPeriodoVenda} dia{diasGozoNoPeriodoVenda !== 1 ? "s" : ""}
+                          </CardTitle>
+                          {((quinzenaVenda === 1 && q1Inicio && q1Fim) || (quinzenaVenda === 2 && q2Inicio && q2Fim)) && (
+                            <p className="text-xs text-muted-foreground">
+                              Período oficial: {formatDateBR(quinzenaVenda === 1 ? q1Inicio : q2Inicio)} a {formatDateBR(quinzenaVenda === 1 ? q1Fim : q2Fim)}
+                            </p>
+                          )}
+                        </CardHeader>
+                        <CardContent className="grid grid-cols-2 gap-4">
+                          <FormField control={form.control} name="gozo_venda_inicio" render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Data de Início do Gozo</FormLabel>
+                              <FormControl><Input type="date" {...field} /></FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )} />
+                          <FormItem>
+                            <FormLabel>Data de Fim (automático)</FormLabel>
+                            <Input type="date" value={form.watch("gozo_venda_fim") || ""} readOnly className="bg-muted cursor-not-allowed" />
+                          </FormItem>
+                        </CardContent>
+                        {gozoDateError && (
+                          <div className="px-6 pb-4">
+                            <Alert variant="destructive">
+                              <AlertTriangle className="h-4 w-4" />
+                              <AlertDescription className="text-sm">{gozoDateError}</AlertDescription>
+                            </Alert>
+                          </div>
+                        )}
+                      </Card>
+                    )}
+
+                    <Card className="border-muted bg-muted/30">
+                      <CardContent className="pt-4 space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span>Dias totais de férias:</span>
+                          <span className="font-semibold">30 dias</span>
+                        </div>
+                        <div className="flex justify-between text-sm text-destructive">
+                          <span>Dias vendidos ({periodoVendaLabel} período):</span>
+                          <span className="font-semibold">-{diasVendidos} dias</span>
+                        </div>
+                        <div className="border-t pt-2 flex justify-between text-sm font-bold">
+                          <span>Dias de gozo:</span>
+                          <span>{diasGozo} dias ({outroPeriodoLabel}: 15 + {periodoVendaLabel}: {diasGozoNoPeriodoVenda})</span>
+                        </div>
+                      </CardContent>
+                    </Card>
                   </div>
                 )}
-              </RadioGroup>
 
-              {/* ===== VENDA PADRÃO (<=10 dias) ===== */}
-              {isVendaPadrao && (
-                <div className="space-y-4 pl-7 border-l-2 border-primary/20">
-                  {/* Days input */}
-                  <FormField control={form.control} name="dias_vendidos" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Quantidade de dias a vender (máx. 10)</FormLabel>
-                      <FormControl>
-                        <Input type="number" min={1} max={10} {...field}
-                          value={field.value ?? 0}
-                          onChange={(e) => field.onChange(Math.min(10, Math.max(0, parseInt(e.target.value) || 0)))}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
+                {/* Initial venda state (0 days) */}
+                {isVenda && diasVendidos === 0 && (
+                  <div className="space-y-4 pl-7 border-l-2 border-primary/20">
+                    <FormField control={form.control} name="dias_vendidos" render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Quantidade de dias a vender (máx. 10)</FormLabel>
+                        <FormControl>
+                          <Input type="number" min={1} max={10} {...field}
+                            value={field.value ?? 0}
+                            onChange={(e) => field.onChange(Math.min(10, Math.max(0, parseInt(e.target.value) || 0)))}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )} />
+                  </div>
+                )}
+              </div>
+            )}
 
-                  {/* Period of sale selector */}
-                  <FormField control={form.control} name="quinzena_venda" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Período da venda</FormLabel>
-                      <Select onValueChange={(v) => {
-                        field.onChange(parseInt(v));
-                        form.setValue("gozo_venda_inicio", "");
-                        form.setValue("gozo_venda_fim", "");
-                        setGozoDateError(null);
-                      }} value={String(field.value || 1)}>
-                        <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                        <SelectContent>
-                          <SelectItem value="1">1º Período</SelectItem>
-                          <SelectItem value="2">2º Período</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
 
-                  {/* Informative text */}
-                  <Alert className="border-primary/30 bg-primary/5">
-                    <Info className="h-4 w-4 text-primary" />
-                    <AlertDescription className="text-sm">
-                      O {outroPeriodoLabel} período será gozado integralmente (15 dias). No {periodoVendaLabel} período, serão gozados {diasGozoNoPeriodoVenda} dia{diasGozoNoPeriodoVenda !== 1 ? "s" : ""}.
-                    </AlertDescription>
-                  </Alert>
-
-                  {/* Gozo date card for sale period */}
-                  {diasGozoNoPeriodoVenda > 0 && (
-                    <Card className="border-primary/20 bg-primary/5">
-                      <CardHeader className="pb-2">
-                        <CardTitle className="text-sm text-primary">
-                          Gozo do {periodoVendaLabel} período — {diasGozoNoPeriodoVenda} dia{diasGozoNoPeriodoVenda !== 1 ? "s" : ""}
-                        </CardTitle>
-                        {((quinzenaVenda === 1 && q1Inicio && q1Fim) || (quinzenaVenda === 2 && q2Inicio && q2Fim)) && (
-                          <p className="text-xs text-muted-foreground">
-                            Período oficial: {formatDateBR(quinzenaVenda === 1 ? q1Inicio : q2Inicio)} a {formatDateBR(quinzenaVenda === 1 ? q1Fim : q2Fim)}
-                          </p>
-                        )}
-                      </CardHeader>
-                      <CardContent className="grid grid-cols-2 gap-4">
-                        <FormField control={form.control} name="gozo_venda_inicio" render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Data de Início do Gozo</FormLabel>
-                            <FormControl><Input type="date" {...field} /></FormControl>
-                            <FormMessage />
-                          </FormItem>
-                        )} />
-                        <FormItem>
-                          <FormLabel>Data de Fim (automático)</FormLabel>
-                          <Input type="date" value={form.watch("gozo_venda_fim") || ""} readOnly className="bg-muted cursor-not-allowed" />
-                        </FormItem>
-                      </CardContent>
-                      {gozoDateError && (
-                        <div className="px-6 pb-4">
-                          <Alert variant="destructive">
-                            <AlertTriangle className="h-4 w-4" />
-                            <AlertDescription className="text-sm">{gozoDateError}</AlertDescription>
-                          </Alert>
-                        </div>
-                      )}
-                    </Card>
-                  )}
-
-                  {/* Visual summary */}
-                  <Card className="border-muted bg-muted/30">
-                    <CardContent className="pt-4 space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span>Dias totais de férias:</span>
-                        <span className="font-semibold">30 dias</span>
-                      </div>
-                      <div className="flex justify-between text-sm text-destructive">
-                        <span>Dias vendidos ({periodoVendaLabel} período):</span>
-                        <span className="font-semibold">-{diasVendidos} dias</span>
-                      </div>
-                      <div className="border-t pt-2 flex justify-between text-sm font-bold">
-                        <span>Dias de gozo:</span>
-                        <span>{diasGozo} dias ({outroPeriodoLabel}: 15 + {periodoVendaLabel}: {diasGozoNoPeriodoVenda})</span>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
-              )}
-
-              {/* ===== VENDA EXCEÇÃO (>10 dias) ===== */}
-              {isVendaExcecao && (
-                <div className="space-y-4 pl-7 border-l-2 border-primary/20">
-                  {/* Days input */}
-                  <FormField control={form.control} name="dias_vendidos" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Quantidade de dias a vender (exceção — máx. 30)</FormLabel>
-                      <FormControl>
-                        <Input type="number" min={1} max={30} {...field}
-                          value={field.value ?? 0}
-                          onChange={(e) => field.onChange(Math.min(30, Math.max(0, parseInt(e.target.value) || 0)))}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-
-                  {/* Period of sale selector */}
-                  <FormField control={form.control} name="quinzena_venda" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Período da venda</FormLabel>
-                      <Select onValueChange={(v) => field.onChange(parseInt(v))} value={String(field.value || 1)}>
-                        <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                        <SelectContent>
-                          <SelectItem value="1">1º Período</SelectItem>
-                          <SelectItem value="2">2º Período</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-
-                  {diasVendidos >= 1 && diasVendidos <= 29 && (
-                    <>
-                      {/* Gozo periods selector */}
-                      {!forceSingleGozo && (
-                        <div className="space-y-2">
-                          <p className="text-sm font-medium">Períodos de gozo</p>
-                          <RadioGroup
-                            value={gozoVendaPeriodos}
-                            onValueChange={(v) => form.setValue("gozo_venda_periodos", v as "1" | "2")}
-                            className="flex gap-4"
-                          >
                             <div className="flex items-center space-x-2">
                               <RadioGroupItem value="1" id="gozo-exc-1" />
                               <Label htmlFor="gozo-exc-1">1 período de gozo</Label>
