@@ -476,7 +476,25 @@ export function FeriasDialog({ open, onOpenChange, ferias, anoReferencia, onSucc
     }
     setConflicts([]);
     setGozoDateError(null);
-  }, [ferias, open]);
+    // Reset exception state
+    if (!ferias) {
+      setExcecaoTipo(null);
+      setExcDistribuicaoTipo("");
+      setExcDiasVendidos(0);
+      setExcPeriodos([]);
+    } else if (ferias.gozo_flexivel) {
+      // Restore flexible periods from existing data
+      setExcecaoTipo(ferias.vender_dias ? "vender" : ferias.gozo_diferente ? "gozo_diferente" : null);
+      setExcDistribuicaoTipo(ferias.distribuicao_tipo || "");
+      setExcDiasVendidos(ferias.dias_vendidos || 0);
+      // Periods will be loaded via separate query - initialized empty for now
+      setExcPeriodos([]);
+    } else {
+      setExcecaoTipo(null);
+      setExcDistribuicaoTipo("");
+      setExcDiasVendidos(0);
+      setExcPeriodos([]);
+    }
 
   // Check conflicts
   const checkConflicts = async (data: FeriasFormData) => {
