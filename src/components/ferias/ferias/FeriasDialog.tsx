@@ -653,39 +653,74 @@ export function FeriasDialog({ open, onOpenChange, ferias, anoReferencia, onSucc
       let diasVend = 0;
       let quinzenaVendaVal: number | null = null;
       let gozoDiferente = false;
+      let gozoFlexivel = false;
+      let distribuicaoTipoVal: string | null = null;
 
-      if (data.opcao_adicional === "vender" && (data.dias_vendidos || 0) > 0) {
-        venderDias = true;
-        diasVend = data.dias_vendidos || 0;
-        quinzenaVendaVal = data.quinzena_venda || 1;
+      // Exception mode with flexible periods
+      if (data.is_excecao && excecaoTipo) {
+        gozoFlexivel = true;
+        distribuicaoTipoVal = excDistribuicaoTipo || null;
 
-        if (diasVend <= 10) {
-          // Standard sale: gozo only in the sale period
-          if (quinzenaVendaVal === 1) {
-            gozoQ1Inicio = data.gozo_venda_inicio || null;
-            gozoQ1Fim = data.gozo_venda_fim || null;
+        if (excecaoTipo === "vender") {
+          venderDias = true;
+          diasVend = excDiasVendidos;
+          // quinzena_venda not meaningful for flexible, but set for backward compat
+          quinzenaVendaVal = excDistribuicaoTipo === "2" ? 2 : 1;
+          // Set legacy gozo fields from first period if exists (for backward compat)
+          if (excPeriodos.length > 0) {
+            gozoQ1Inicio = excPeriodos[0].data_inicio || null;
+            gozoQ1Fim = excPeriodos[0].data_fim || null;
+          }
+          if (excPeriodos.length > 1) {
+            gozoQ2Inicio = excPeriodos[1].data_inicio || null;
+            gozoQ2Fim = excPeriodos[1].data_fim || null;
+          }
+        } else if (excecaoTipo === "gozo_diferente") {
+          gozoDiferente = true;
+          const p1 = excPeriodos.filter(p => p.referencia_periodo === 1);
+          const p2 = excPeriodos.filter(p => p.referencia_periodo === 2);
+          if (p1.length > 0) {
+            gozoQ1Inicio = p1[0].data_inicio || null;
+            gozoQ1Fim = p1[p1.length - 1].data_fim || null;
+          }
+          if (p2.length > 0) {
+            gozoQ2Inicio = p2[0].data_inicio || null;
+            gozoQ2Fim = p2[p2.length - 1].data_fim || null;
+          }
+        }
+      } else {
+        // Standard mode - original logic
+        if (data.opcao_adicional === "vender" && (data.dias_vendidos || 0) > 0) {
+          venderDias = true;
+          diasVend = data.dias_vendidos || 0;
+          quinzenaVendaVal = data.quinzena_venda || 1;
+
+          if (diasVend <= 10) {
+            if (quinzenaVendaVal === 1) {
+              gozoQ1Inicio = data.gozo_venda_inicio || null;
+              gozoQ1Fim = data.gozo_venda_fim || null;
+            } else {
+              gozoQ2Inicio = data.gozo_venda_inicio || null;
+              gozoQ2Fim = data.gozo_venda_fim || null;
+            }
           } else {
-            gozoQ2Inicio = data.gozo_venda_inicio || null;
-            gozoQ2Fim = data.gozo_venda_fim || null;
+            gozoQ1Inicio = data.gozo_venda_q1_inicio || null;
+            gozoQ1Fim = data.gozo_venda_q1_fim || null;
+            if (data.gozo_venda_periodos === "2") {
+              gozoQ2Inicio = data.gozo_venda_q2_inicio || null;
+              gozoQ2Fim = data.gozo_venda_q2_fim || null;
+            }
           }
-        } else {
-          // Exception sale: use q1/q2 gozo fields
-          gozoQ1Inicio = data.gozo_venda_q1_inicio || null;
-          gozoQ1Fim = data.gozo_venda_q1_fim || null;
-          if (data.gozo_venda_periodos === "2") {
-            gozoQ2Inicio = data.gozo_venda_q2_inicio || null;
-            gozoQ2Fim = data.gozo_venda_q2_fim || null;
+        } else if (data.opcao_adicional === "gozo_diferente") {
+          gozoDiferente = true;
+          if (data.gozo_periodos === "1" || data.gozo_periodos === "ambos") {
+            gozoQ1Inicio = data.gozo_quinzena1_inicio || null;
+            gozoQ1Fim = data.gozo_quinzena1_fim || null;
           }
-        }
-      } else if (data.opcao_adicional === "gozo_diferente") {
-        gozoDiferente = true;
-        if (data.gozo_periodos === "1" || data.gozo_periodos === "ambos") {
-          gozoQ1Inicio = data.gozo_quinzena1_inicio || null;
-          gozoQ1Fim = data.gozo_quinzena1_fim || null;
-        }
-        if (data.gozo_periodos === "2" || data.gozo_periodos === "ambos") {
-          gozoQ2Inicio = data.gozo_quinzena2_inicio || null;
-          gozoQ2Fim = data.gozo_quinzena2_fim || null;
+          if (data.gozo_periodos === "2" || data.gozo_periodos === "ambos") {
+            gozoQ2Inicio = data.gozo_quinzena2_inicio || null;
+            gozoQ2Fim = data.gozo_quinzena2_fim || null;
+          }
         }
       }
 
@@ -709,14 +744,44 @@ export function FeriasDialog({ open, onOpenChange, ferias, anoReferencia, onSucc
         excecao_justificativa: data.is_excecao ? data.excecao_justificativa : null,
         periodo_aquisitivo_inicio: periodoAquisitivo?.inicio || null,
         periodo_aquisitivo_fim: periodoAquisitivo?.fim || null,
+        gozo_flexivel: gozoFlexivel,
+        distribuicao_tipo: distribuicaoTipoVal,
       };
 
+      let feriasId: string;
       if (isEditing) {
         const { error } = await supabase.from("ferias_ferias").update(payload).eq("id", ferias.id);
         if (error) throw error;
+        feriasId = ferias.id;
       } else {
-        const { error } = await supabase.from("ferias_ferias").insert(payload);
+        const { data: inserted, error } = await supabase.from("ferias_ferias").insert(payload).select("id").single();
         if (error) throw error;
+        feriasId = inserted.id;
+      }
+
+      // Save flexible periods if applicable
+      if (gozoFlexivel && excPeriodos.length > 0) {
+        // Delete existing periods
+        await supabase.from("ferias_gozo_periodos" as any).delete().eq("ferias_id", feriasId);
+        // Insert new periods
+        const periodosPayload = excPeriodos
+          .filter(p => p.data_inicio && p.data_fim && p.dias > 0)
+          .map((p, idx) => ({
+            ferias_id: feriasId,
+            tipo: excecaoTipo,
+            referencia_periodo: p.referencia_periodo || null,
+            numero: idx + 1,
+            dias: p.dias,
+            data_inicio: p.data_inicio,
+            data_fim: p.data_fim,
+          }));
+        if (periodosPayload.length > 0) {
+          const { error: pError } = await supabase.from("ferias_gozo_periodos" as any).insert(periodosPayload);
+          if (pError) throw pError;
+        }
+      } else if (isEditing) {
+        // Clear flexible periods if switching back to standard
+        await supabase.from("ferias_gozo_periodos" as any).delete().eq("ferias_id", feriasId);
       }
     },
     onSuccess: () => {
