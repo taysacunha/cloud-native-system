@@ -1232,19 +1232,6 @@ export function FeriasDialog({ open, onOpenChange, ferias, anoReferencia, onSucc
             )}
 
 
-
-
-                  {diasVendidos >= 1 && diasVendidos <= 29 && (
-                    <>
-                      {/* Gozo periods selector */}
-                      {!forceSingleGozo && (
-                        <div className="space-y-2">
-                          <p className="text-sm font-medium">Períodos de gozo</p>
-                          <RadioGroup
-                            value={gozoVendaPeriodos}
-                            onValueChange={(v) => form.setValue("gozo_venda_periodos", v as "1" | "2")}
-                            className="flex gap-4"
-                          >
                             <div className="flex items-center space-x-2">
                               <RadioGroupItem value="1" id="gozo-exc-1" />
                               <Label htmlFor="gozo-exc-1">1 período de gozo</Label>
