@@ -495,6 +495,7 @@ export function FeriasDialog({ open, onOpenChange, ferias, anoReferencia, onSucc
       setExcDiasVendidos(0);
       setExcPeriodos([]);
     }
+  }, [ferias]);
 
   // Check conflicts
   const checkConflicts = async (data: FeriasFormData) => {
