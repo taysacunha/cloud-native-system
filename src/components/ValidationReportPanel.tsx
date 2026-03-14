@@ -622,7 +622,7 @@ function BrokerView({
                           <div className="font-medium">{v.rule}</div>
                           <div>{v.details}</div>
                           {v.dates && v.dates.length > 0 && (
-                            <div className="text-muted-foreground mt-1">Datas: {v.dates.join(", ")}</div>
+                            <div className="text-muted-foreground mt-1">Datas: {v.dates.map(formatDateBR).join(", ")}</div>
                           )}
                           <RuleExplanationBadge rule={v.rule} />
                         </li>
