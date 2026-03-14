@@ -198,6 +198,34 @@ export default function FeriasFerias() {
     },
   });
 
+  // Fetch flexible gozo periods for all ferias with gozo_flexivel
+  const flexFeriasIds = useMemo(() => ferias.filter(f => f.gozo_flexivel).map(f => f.id), [ferias]);
+  
+  const { data: gozoPeriodos = [] } = useQuery({
+    queryKey: ["ferias-gozo-periodos-table", flexFeriasIds],
+    queryFn: async () => {
+      if (flexFeriasIds.length === 0) return [];
+      const { data, error } = await supabase
+        .from("ferias_gozo_periodos" as any)
+        .select("id, ferias_id, numero, dias, data_inicio, data_fim")
+        .in("ferias_id", flexFeriasIds)
+        .order("numero");
+      if (error) throw error;
+      return data as any as GozoPeriodo[];
+    },
+    enabled: flexFeriasIds.length > 0,
+  });
+
+  // Group gozo periods by ferias_id
+  const gozoPeriodosByFeriasId = useMemo(() => {
+    const map: Record<string, GozoPeriodo[]> = {};
+    for (const p of gozoPeriodos) {
+      if (!map[p.ferias_id]) map[p.ferias_id] = [];
+      map[p.ferias_id].push(p);
+    }
+    return map;
+  }, [gozoPeriodos]);
+
   const { data: setores = [] } = useQuery({
     queryKey: ["ferias-setores-filter"],
     queryFn: async () => {
