@@ -47,6 +47,7 @@ interface FeriasRecord {
   quinzena2_inicio: string | null;
   quinzena2_fim: string | null;
   gozo_diferente: boolean;
+  gozo_flexivel: boolean;
   gozo_quinzena1_inicio: string | null;
   gozo_quinzena1_fim: string | null;
   gozo_quinzena2_inicio: string | null;
@@ -71,6 +72,15 @@ interface FeriasRecord {
       nome: string;
     } | null;
   } | null;
+}
+
+interface GozoPeriodo {
+  id: string;
+  ferias_id: string;
+  numero: number;
+  dias: number;
+  data_inicio: string;
+  data_fim: string;
 }
 
 interface FormularioAnual {
@@ -187,6 +197,34 @@ export default function FeriasFerias() {
       return data as FormularioAnual[];
     },
   });
+
+  // Fetch flexible gozo periods for all ferias with gozo_flexivel
+  const flexFeriasIds = useMemo(() => ferias.filter(f => f.gozo_flexivel).map(f => f.id), [ferias]);
+  
+  const { data: gozoPeriodos = [] } = useQuery({
+    queryKey: ["ferias-gozo-periodos-table", flexFeriasIds],
+    queryFn: async () => {
+      if (flexFeriasIds.length === 0) return [];
+      const { data, error } = await supabase
+        .from("ferias_gozo_periodos" as any)
+        .select("id, ferias_id, numero, dias, data_inicio, data_fim")
+        .in("ferias_id", flexFeriasIds)
+        .order("numero");
+      if (error) throw error;
+      return data as any as GozoPeriodo[];
+    },
+    enabled: flexFeriasIds.length > 0,
+  });
+
+  // Group gozo periods by ferias_id
+  const gozoPeriodosByFeriasId = useMemo(() => {
+    const map: Record<string, GozoPeriodo[]> = {};
+    for (const p of gozoPeriodos) {
+      if (!map[p.ferias_id]) map[p.ferias_id] = [];
+      map[p.ferias_id].push(p);
+    }
+    return map;
+  }, [gozoPeriodos]);
 
   const { data: setores = [] } = useQuery({
     queryKey: ["ferias-setores-filter"],
@@ -442,7 +480,7 @@ export default function FeriasFerias() {
                       <TableRow>
                         <TableHead className="cursor-pointer select-none" onClick={() => handleFeriasSort("nome")}>Colaborador <ArrowUpDown className="inline h-3 w-3 ml-1" /></TableHead>
                         <TableHead className="cursor-pointer select-none" onClick={() => handleFeriasSort("setor")}>Setor <ArrowUpDown className="inline h-3 w-3 ml-1" /></TableHead>
-                        <TableHead>1º Período</TableHead>
+                        <TableHead>Período(s) de Gozo</TableHead>
                         <TableHead>2º Período</TableHead>
                         <TableHead>Venda</TableHead>
                         <TableHead className="cursor-pointer select-none" onClick={() => handleFeriasSort("status")}>Status <ArrowUpDown className="inline h-3 w-3 ml-1" /></TableHead>
@@ -456,11 +494,22 @@ export default function FeriasFerias() {
                         <TableRow key={f.id}>
                           <TableCell className="font-medium">{f.colaborador?.nome || "—"}</TableCell>
                           <TableCell>{f.colaborador?.setor_titular?.nome || "—"}</TableCell>
-                          <TableCell className="text-sm">{f.gozo_diferente && f.gozo_quinzena1_inicio ? formatPeriodo(f.gozo_quinzena1_inicio, f.gozo_quinzena1_fim!) : formatPeriodo(f.quinzena1_inicio, f.quinzena1_fim)}</TableCell>
                           <TableCell className="text-sm">
-                            {f.quinzena2_inicio && f.quinzena2_fim
-                              ? (f.gozo_diferente && f.gozo_quinzena2_inicio ? formatPeriodo(f.gozo_quinzena2_inicio, f.gozo_quinzena2_fim!) : formatPeriodo(f.quinzena2_inicio, f.quinzena2_fim))
-                              : <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/20 gap-1 text-xs"><Clock className="h-3 w-3" />Pendente</Badge>
+                            {f.gozo_flexivel && gozoPeriodosByFeriasId[f.id]?.length
+                              ? gozoPeriodosByFeriasId[f.id].map((p, i) => (
+                                  <div key={p.id}>{formatPeriodo(p.data_inicio, p.data_fim)} <span className="text-muted-foreground">({p.dias}d)</span></div>
+                                ))
+                              : f.gozo_diferente && f.gozo_quinzena1_inicio
+                                ? formatPeriodo(f.gozo_quinzena1_inicio, f.gozo_quinzena1_fim!)
+                                : formatPeriodo(f.quinzena1_inicio, f.quinzena1_fim)
+                            }
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {f.gozo_flexivel && gozoPeriodosByFeriasId[f.id]?.length
+                              ? <span className="text-muted-foreground text-xs">Ver 1º Período</span>
+                              : f.quinzena2_inicio && f.quinzena2_fim
+                                ? (f.gozo_diferente && f.gozo_quinzena2_inicio ? formatPeriodo(f.gozo_quinzena2_inicio, f.gozo_quinzena2_fim!) : formatPeriodo(f.quinzena2_inicio, f.quinzena2_fim))
+                                : <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/20 gap-1 text-xs"><Clock className="h-3 w-3" />Pendente</Badge>
                             }
                           </TableCell>
                           <TableCell>{f.vender_dias && f.dias_vendidos ? <Badge variant="outline" className="text-xs">{f.dias_vendidos} dias</Badge> : <span className="text-muted-foreground text-xs">—</span>}</TableCell>
