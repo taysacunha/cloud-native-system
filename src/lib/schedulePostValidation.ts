@@ -792,13 +792,13 @@ export async function detectUnallocatedDemands(
               a => a.location_id !== location.id && 
                    a.assignment_date === dateStr && 
                    a.shift_type === shift &&
-                   (a as any).broker_id === cb.brokerId
+                   a.broker_id === cb.brokerId
             );
             // Also check if broker has ANY assignment on this date/shift (even same location different context)
             const anyAssignment = assignments.find(
               a => a.assignment_date === dateStr && 
                    a.shift_type === shift &&
-                   (a as any).broker_id === cb.brokerId
+                   a.broker_id === cb.brokerId
             );
 
             if (anyAssignment) {
