@@ -697,7 +697,7 @@ export default function FeriasFerias() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {contadorData.map((f) => (
+                      {contadorPagination.paginatedItems.map((f) => (
                         <TableRow key={f.id}>
                           <TableCell className="font-medium">{f.colaborador?.nome || "—"}</TableCell>
                           <TableCell>{f.colaborador?.setor_titular?.nome || "—"}</TableCell>
@@ -709,6 +709,14 @@ export default function FeriasFerias() {
                       ))}
                     </TableBody>
                   </Table>
+                  <TablePagination
+                    currentPage={contadorPagination.currentPage}
+                    totalPages={contadorPagination.totalPages}
+                    itemsPerPage={contadorPerPage}
+                    onPageChange={contadorPagination.setCurrentPage}
+                    onItemsPerPageChange={(v) => { setContadorPerPage(v); contadorPagination.setCurrentPage(1); }}
+                    totalItems={contadorData.length}
+                  />
                 </div>
               )}
             </CardContent>
