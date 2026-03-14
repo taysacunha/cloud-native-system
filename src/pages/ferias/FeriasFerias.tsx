@@ -36,6 +36,7 @@ import { FormularioPDFGenerator } from "@/components/ferias/relatorios/Formulari
 import { useSystemAccess } from "@/hooks/useSystemAccess";
 import { useUserRole } from "@/hooks/useUserRole";
 import { usePagination } from "@/hooks/usePagination";
+import { TablePagination } from "@/components/vendas/TableControls";
 
 // ========== Types ==========
 
@@ -276,8 +277,12 @@ export default function FeriasFerias() {
     });
   }, [formularios, formSearchTerm]);
 
-  const feriasPagination = usePagination(filteredFerias, 15);
-  const formPagination = usePagination(filteredFormularios, 15);
+  const [feriasPerPage, setFeriasPerPage] = useState(25);
+  const [formPerPage, setFormPerPage] = useState(25);
+  const [contadorPerPage, setContadorPerPage] = useState(25);
+
+  const feriasPagination = usePagination(filteredFerias, feriasPerPage);
+  const formPagination = usePagination(filteredFormularios, formPerPage);
 
   const handleFeriasSort = useCallback((field: "nome" | "setor" | "status") => {
     if (feriasSortField === field) setFeriasSortDir(prev => prev === "asc" ? "desc" : "asc");
@@ -318,7 +323,7 @@ export default function FeriasFerias() {
       });
   }, [filteredFerias, contadorSortField, contadorSortDir]);
 
-  const contadorPagination = usePagination(contadorData, 15);
+  const contadorPagination = usePagination(contadorData, contadorPerPage);
 
   const calcAdjustedPeriodo = (inicio: string, fim: string, diasVendidos: number) => {
     if (diasVendidos <= 0) return formatPeriodo(inicio, fim);
@@ -544,16 +549,14 @@ export default function FeriasFerias() {
                       ))}
                     </TableBody>
                   </Table>
-                  {feriasPagination.totalPages > 1 && (
-                    <div className="flex items-center justify-between px-4 py-3 border-t">
-                      <p className="text-sm text-muted-foreground">{feriasPagination.startIndex + 1}-{feriasPagination.endIndex} de {filteredFerias.length}</p>
-                      <div className="flex items-center gap-2">
-                        <Button variant="outline" size="sm" onClick={() => feriasPagination.setCurrentPage(feriasPagination.currentPage - 1)} disabled={feriasPagination.currentPage <= 1}><ChevronLeft className="h-4 w-4" /></Button>
-                        <span className="text-sm">{feriasPagination.currentPage} / {feriasPagination.totalPages}</span>
-                        <Button variant="outline" size="sm" onClick={() => feriasPagination.setCurrentPage(feriasPagination.currentPage + 1)} disabled={feriasPagination.currentPage >= feriasPagination.totalPages}><ChevronRight className="h-4 w-4" /></Button>
-                      </div>
-                    </div>
-                  )}
+                  <TablePagination
+                    currentPage={feriasPagination.currentPage}
+                    totalPages={feriasPagination.totalPages}
+                    itemsPerPage={feriasPerPage}
+                    onPageChange={feriasPagination.setCurrentPage}
+                    onItemsPerPageChange={(v) => { setFeriasPerPage(v); feriasPagination.setCurrentPage(1); }}
+                    totalItems={filteredFerias.length}
+                  />
                 </div>
               )}
             </CardContent>
@@ -648,16 +651,14 @@ export default function FeriasFerias() {
                           })}
                         </TableBody>
                       </Table>
-                      {formPagination.totalPages > 1 && (
-                        <div className="flex items-center justify-between px-4 py-3 border-t">
-                          <p className="text-sm text-muted-foreground">{formPagination.startIndex + 1}-{formPagination.endIndex} de {filteredFormularios.length}</p>
-                          <div className="flex items-center gap-2">
-                            <Button variant="outline" size="sm" onClick={() => formPagination.setCurrentPage(formPagination.currentPage - 1)} disabled={formPagination.currentPage <= 1}><ChevronLeft className="h-4 w-4" /></Button>
-                            <span className="text-sm">{formPagination.currentPage} / {formPagination.totalPages}</span>
-                            <Button variant="outline" size="sm" onClick={() => formPagination.setCurrentPage(formPagination.currentPage + 1)} disabled={formPagination.currentPage >= formPagination.totalPages}><ChevronRight className="h-4 w-4" /></Button>
-                          </div>
-                        </div>
-                      )}
+                      <TablePagination
+                        currentPage={formPagination.currentPage}
+                        totalPages={formPagination.totalPages}
+                        itemsPerPage={formPerPage}
+                        onPageChange={formPagination.setCurrentPage}
+                        onItemsPerPageChange={(v) => { setFormPerPage(v); formPagination.setCurrentPage(1); }}
+                        totalItems={filteredFormularios.length}
+                      />
                     </div>
                   )}
                 </CardContent>
@@ -696,7 +697,7 @@ export default function FeriasFerias() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {contadorData.map((f) => (
+                      {contadorPagination.paginatedItems.map((f) => (
                         <TableRow key={f.id}>
                           <TableCell className="font-medium">{f.colaborador?.nome || "—"}</TableCell>
                           <TableCell>{f.colaborador?.setor_titular?.nome || "—"}</TableCell>
@@ -708,6 +709,14 @@ export default function FeriasFerias() {
                       ))}
                     </TableBody>
                   </Table>
+                  <TablePagination
+                    currentPage={contadorPagination.currentPage}
+                    totalPages={contadorPagination.totalPages}
+                    itemsPerPage={contadorPerPage}
+                    onPageChange={contadorPagination.setCurrentPage}
+                    onItemsPerPageChange={(v) => { setContadorPerPage(v); contadorPagination.setCurrentPage(1); }}
+                    totalItems={contadorData.length}
+                  />
                 </div>
               )}
             </CardContent>
