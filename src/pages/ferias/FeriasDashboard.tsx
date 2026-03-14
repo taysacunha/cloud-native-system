@@ -50,7 +50,7 @@ export default function FeriasDashboard() {
           gozo_quinzena2_fim,
           ferias_colaboradores(nome)
         `)
-        .eq("status", "ativa");
+        .in("status", ["aprovada", "em_gozo_q1", "q1_concluida", "em_gozo_q2", "em_gozo"]);
       if (error) throw error;
       
       // Filter vacations that overlap with current month
