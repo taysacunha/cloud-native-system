@@ -3339,6 +3339,13 @@ async function generateWeeklyScheduleWithAccumulator(
   // ETAPA 8.8: DESCONSECUTIVAR (antes do último recurso)
   // ═══════════════════════════════════════════════════════════
   const deConsecutiveResult = deConsecutivizeExternals(context, possibleDemands, internalLocIds);
+
+  // ═══════════════════════════════════════════════════════════
+  // ETAPA 8.8b: CHAIN SWAP PARA DEMANDAS NÃO ALOCADAS
+  // Tenta preencher demandas vazias via cadeia de trocas
+  // Ex: mover sábado de Leonardo para Daniela, liberar Leonardo para domingo
+  // ═══════════════════════════════════════════════════════════
+  const chainSwapResult = chainSwapForUnallocated(context, possibleDemands, allocatedDemands, internalLocIds, relaxedAllocations);
   
   // ═══════════════════════════════════════════════════════════
   // ETAPA 8.9: ALOCAÇÃO DE PLANTÕES INTERNOS (SÁBADO)
