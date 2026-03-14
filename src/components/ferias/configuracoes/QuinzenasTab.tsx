@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { getYearOptions } from "@/lib/dateUtils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -51,7 +52,7 @@ export function QuinzenasTab() {
   const queryClient = useQueryClient();
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState(currentYear);
-  const years = Array.from({ length: 5 }, (_, i) => currentYear + i);
+  const years = getYearOptions(0, 5);
 
   const { data: quinzenas = [], isLoading } = useQuery({
     queryKey: ["ferias-quinzenas", selectedYear],

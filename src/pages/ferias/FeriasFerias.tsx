@@ -114,17 +114,7 @@ const MONTHS = [
   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"
 ];
 
-const statusLabels: Record<string, string> = {
-  pendente: "Pendente", aprovada: "Aprovada", em_gozo: "Em Gozo", concluida: "Concluída", cancelada: "Cancelada",
-};
-
-const statusColors: Record<string, string> = {
-  pendente: "bg-yellow-500/10 text-yellow-600 border-yellow-500/20",
-  aprovada: "bg-blue-500/10 text-blue-600 border-blue-500/20",
-  em_gozo: "bg-green-500/10 text-green-600 border-green-500/20",
-  concluida: "bg-muted text-muted-foreground border-muted",
-  cancelada: "bg-destructive/10 text-destructive border-destructive/20",
-};
+import { getYearOptions, FERIAS_STATUS_LABELS as statusLabels, FERIAS_STATUS_COLORS as statusColors, isFeriasEmGozo } from "@/lib/dateUtils";
 
 const formularioStatusConfig: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
   pendente: { label: "Pendente", color: "bg-yellow-500/10 text-yellow-600 border-yellow-500/20", icon: <Clock className="h-3 w-3" /> },
@@ -166,7 +156,7 @@ export default function FeriasFerias() {
   const [selectedFormulario, setSelectedFormulario] = useState<FormularioAnual | null>(null);
   const [formulariosOpen, setFormulariosOpen] = useState(false);
 
-  const years = Array.from({ length: 5 }, (_, i) => (currentYear + 1 - i).toString());
+  const years = getYearOptions(3, 3).map(String);
 
   // ========== Queries ==========
 
@@ -304,7 +294,7 @@ export default function FeriasFerias() {
 
   const feriasStats = useMemo(() => ({
     total: filteredFerias.length,
-    emGozo: filteredFerias.filter(f => f.status === "em_gozo").length,
+    emGozo: filteredFerias.filter(f => isFeriasEmGozo(f.status)).length,
     excecoes: filteredFerias.filter(f => f.is_excecao).length,
     geradas: filteredFerias.filter(f => f.origem === "formulario_anual").length,
   }), [filteredFerias]);
@@ -528,7 +518,7 @@ export default function FeriasFerias() {
                               {canEditFerias && (
                                 <>
                                   <Button variant="ghost" size="sm" onClick={() => { setSelectedFerias(f); setDialogOpen(true); }}><Edit className="h-4 w-4" /></Button>
-                                  {(f.status === "aprovada" || f.status === "em_gozo") && (
+                                  {(f.status === "aprovada" || isFeriasEmGozo(f.status)) && (
                                     <Button variant="ghost" size="sm" title="Reduzir dias" onClick={() => { setReducaoFerias(f); setReducaoDialogOpen(true); }}><CalendarMinus className="h-4 w-4 text-warning" /></Button>
                                   )}
                                   <AlertDialog>

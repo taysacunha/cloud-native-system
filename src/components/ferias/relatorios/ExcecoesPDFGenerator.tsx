@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { getYearOptions } from "@/lib/dateUtils";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,7 +22,7 @@ export function ExcecoesPDFGenerator() {
   const [selectedTipo, setSelectedTipo] = useState<ExcecaoTipo>("_all_");
   const [generating, setGenerating] = useState(false);
 
-  const years = Array.from({ length: 5 }, (_, i) => currentYear - 2 + i);
+  const years = getYearOptions(3, 3);
 
   const { data: excecoes, isLoading } = useQuery({
     queryKey: ["excecoes-relatorio", selectedYear, selectedTipo],

@@ -96,7 +96,7 @@ export function CalendarioFeriasTab() {
             unidade:ferias_unidades(nome)
           )
         `)
-        .in("status", ["aprovada", "em_gozo", "concluida"])
+        .in("status", ["aprovada", "em_gozo_q1", "q1_concluida", "em_gozo_q2", "concluida", "em_gozo"])
         .order("quinzena1_inicio");
 
       if (error) throw error;
@@ -276,7 +276,7 @@ export function CalendarioFeriasTab() {
     return intervals.some((i) => i.start.getFullYear() === currentYear);
   }).length;
 
-  const feriasEmGozo = ferias.filter((f) => f.status === "em_gozo").length;
+  const feriasEmGozo = ferias.filter((f) => ["em_gozo_q1", "em_gozo_q2", "em_gozo"].includes(f.status)).length;
   const feriasComExcecao = ferias.filter((f) => f.is_excecao).length;
 
   const loading = loadingFerias;
@@ -476,14 +476,20 @@ export function CalendarioFeriasTab() {
                       </div>
                       <Badge
                         variant={
-                          f.status === "em_gozo"
+                          ["em_gozo_q1", "em_gozo_q2", "em_gozo"].includes(f.status)
                             ? "default"
                             : f.status === "aprovada"
                             ? "secondary"
                             : "outline"
                         }
                       >
-                        {f.status === "em_gozo"
+                        {f.status === "em_gozo_q1"
+                          ? "Em Gozo - 1º"
+                          : f.status === "em_gozo_q2"
+                          ? "Em Gozo - 2º"
+                          : f.status === "q1_concluida"
+                          ? "1º Concluído"
+                          : f.status === "em_gozo"
                           ? "Em Gozo"
                           : f.status === "aprovada"
                           ? "Aprovada"
@@ -523,7 +529,13 @@ export function CalendarioFeriasTab() {
                 <div>
                   <Label className="text-muted-foreground">Status</Label>
                   <Badge className="mt-1">
-                    {selectedFerias.status === "em_gozo"
+                    {selectedFerias.status === "em_gozo_q1"
+                      ? "Em Gozo - 1º Período"
+                      : selectedFerias.status === "em_gozo_q2"
+                      ? "Em Gozo - 2º Período"
+                      : selectedFerias.status === "q1_concluida"
+                      ? "1º Período Concluído"
+                      : selectedFerias.status === "em_gozo"
                       ? "Em Gozo"
                       : selectedFerias.status === "aprovada"
                       ? "Aprovada"

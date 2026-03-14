@@ -50,7 +50,7 @@ export default function FeriasDashboard() {
           gozo_quinzena2_fim,
           ferias_colaboradores(nome)
         `)
-        .eq("status", "ativa");
+        .in("status", ["aprovada", "em_gozo_q1", "q1_concluida", "em_gozo_q2", "em_gozo"]);
       if (error) throw error;
       
       // Filter vacations that overlap with current month
@@ -135,7 +135,7 @@ export default function FeriasDashboard() {
       const { data: feriasAtivas } = await supabase
         .from("ferias_ferias")
         .select("colaborador_id, quinzena1_inicio")
-        .in("status", ["ativa", "pendente", "aprovada"]);
+        .in("status", ["pendente", "aprovada", "em_gozo_q1", "q1_concluida", "em_gozo_q2", "em_gozo"]);
 
       const colaboradoresComFerias = new Set((feriasAtivas || []).map((f) => f.colaborador_id));
 
@@ -208,7 +208,7 @@ export default function FeriasDashboard() {
           gozo_quinzena1_inicio,
           ferias_colaboradores(nome)
         `)
-        .eq("status", "ativa");
+        .in("status", ["aprovada", "em_gozo_q1", "q1_concluida", "em_gozo_q2", "em_gozo"]);
       if (error) throw error;
       
       return (data || []).filter((f: any) => {

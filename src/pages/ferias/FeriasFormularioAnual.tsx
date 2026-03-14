@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { getYearOptions } from "@/lib/dateUtils";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -208,7 +209,7 @@ export default function FeriasFormularioAnual() {
   }), [filteredFormularios]);
 
   // Year options
-  const years = Array.from({ length: 3 }, (_, i) => (currentYear + 1 - i).toString());
+  const years = getYearOptions(1, 3).map(String);
 
   return (
     <div className="space-y-6">
