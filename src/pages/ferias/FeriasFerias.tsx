@@ -480,7 +480,7 @@ export default function FeriasFerias() {
                       <TableRow>
                         <TableHead className="cursor-pointer select-none" onClick={() => handleFeriasSort("nome")}>Colaborador <ArrowUpDown className="inline h-3 w-3 ml-1" /></TableHead>
                         <TableHead className="cursor-pointer select-none" onClick={() => handleFeriasSort("setor")}>Setor <ArrowUpDown className="inline h-3 w-3 ml-1" /></TableHead>
-                        <TableHead>1º Período</TableHead>
+                        <TableHead>Período(s) de Gozo</TableHead>
                         <TableHead>2º Período</TableHead>
                         <TableHead>Venda</TableHead>
                         <TableHead className="cursor-pointer select-none" onClick={() => handleFeriasSort("status")}>Status <ArrowUpDown className="inline h-3 w-3 ml-1" /></TableHead>
