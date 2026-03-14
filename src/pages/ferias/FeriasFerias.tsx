@@ -447,6 +447,13 @@ export default function FeriasFerias() {
             </div>
           )}
 
+          {feriasError && (
+            <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-destructive text-sm flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              <span>Erro ao atualizar status das férias: {feriasError.message}. Os dados exibidos podem estar desatualizados.</span>
+            </div>
+          )}
+
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <Card><CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Total</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{feriasStats.total}</div></CardContent></Card>
             <Card className="border-green-500/20"><CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-green-600">Em Gozo</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold text-green-600">{feriasStats.emGozo}</div></CardContent></Card>
