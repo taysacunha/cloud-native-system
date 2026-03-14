@@ -899,6 +899,23 @@ const Schedules = () => {
         allMonthAssignments.map(a => a.assignment_date)
       );
 
+      // 5c. Detectar demandas não alocadas INDEPENDENTEMENTE
+      const allDates = allMonthAssignments.map(a => a.assignment_date);
+      const sortedDates = [...new Set(allDates)].sort();
+      // Usar o range completo do mês (todas as semanas)
+      const monthStart = monthSchedules.reduce((min, s) => s.week_start_date < min ? s.week_start_date : min, monthSchedules[0].week_start_date);
+      const monthEnd = monthSchedules.reduce((max, s) => s.week_end_date > max ? s.week_end_date : max, monthSchedules[0].week_end_date);
+      
+      const detectedUnallocated = await detectUnallocatedDemands(
+        allMonthAssignments.map(a => ({
+          location_id: a.location_id,
+          assignment_date: a.assignment_date,
+          shift_type: a.shift_type
+        })),
+        monthStart,
+        monthEnd
+      );
+
       // 6. Executar validação com TODAS as alocações do mês
       const postValidation = postValidateSchedule(
         allMonthAssignments.map(a => ({
@@ -909,7 +926,7 @@ const Schedules = () => {
         })),
         brokersForValidation,
         locationsForValidation,
-        [], // Sem demandas não alocadas para re-validação
+        detectedUnallocated,
         locationBrokerConfigs,
         locationShiftConfigs
       );
