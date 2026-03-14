@@ -47,6 +47,7 @@ interface FeriasRecord {
   quinzena2_inicio: string | null;
   quinzena2_fim: string | null;
   gozo_diferente: boolean;
+  gozo_flexivel: boolean;
   gozo_quinzena1_inicio: string | null;
   gozo_quinzena1_fim: string | null;
   gozo_quinzena2_inicio: string | null;
@@ -71,6 +72,15 @@ interface FeriasRecord {
       nome: string;
     } | null;
   } | null;
+}
+
+interface GozoPeriodo {
+  id: string;
+  ferias_id: string;
+  numero: number;
+  dias: number;
+  data_inicio: string;
+  data_fim: string;
 }
 
 interface FormularioAnual {
