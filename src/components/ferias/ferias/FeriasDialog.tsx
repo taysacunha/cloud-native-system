@@ -598,19 +598,79 @@ export function FeriasDialog({ open, onOpenChange, ferias, anoReferencia, onSucc
             .in("status", ["pendente", "aprovada", "em_gozo_q1", "q1_concluida", "em_gozo_q2", "em_gozo"]);
 
           if (relatedFerias) {
-            const q1Start = parseISO(data.quinzena1_inicio);
-            const q1End = parseISO(data.quinzena1_fim);
+            // Build new vacation's real intervals (reuse logic)
+            const newIntervals: { start: Date; end: Date }[] = [];
+            if (excecaoTipo && excPeriodos.length > 0) {
+              for (const p of excPeriodos) {
+                if (p.data_inicio && p.data_fim) {
+                  newIntervals.push({ start: parseISO(p.data_inicio), end: parseISO(p.data_fim) });
+                }
+              }
+            }
+            if (newIntervals.length === 0) {
+              newIntervals.push({ start: parseISO(data.quinzena1_inicio), end: parseISO(data.quinzena1_fim) });
+              if (data.quinzena2_inicio && data.quinzena2_fim) {
+                newIntervals.push({ start: parseISO(data.quinzena2_inicio), end: parseISO(data.quinzena2_fim) });
+              }
+            }
+
+            // Fetch gozo_periodos for flexible related ferias
+            const flexRelIds = relatedFerias.filter(rf => rf.gozo_flexivel).map(rf => rf.id);
+            let relGozoMap: Record<string, { data_inicio: string; data_fim: string }[]> = {};
+            if (flexRelIds.length > 0) {
+              const { data: relGozos } = await supabase
+                .from("ferias_gozo_periodos" as any)
+                .select("ferias_id, data_inicio, data_fim")
+                .in("ferias_id", flexRelIds);
+              if (relGozos) {
+                for (const gp of relGozos as any[]) {
+                  if (!relGozoMap[gp.ferias_id]) relGozoMap[gp.ferias_id] = [];
+                  relGozoMap[gp.ferias_id].push(gp);
+                }
+              }
+            }
 
             for (const rf of relatedFerias) {
               if (ferias && rf.id === ferias.id) continue;
-              const rfQ1Start = parseISO(rf.quinzena1_inicio);
-              const rfQ1End = parseISO(rf.quinzena1_fim);
-              const noOverlap = !(q1Start <= rfQ1End && q1End >= rfQ1Start);
-              if (noOverlap) {
+
+              // Extract real intervals for related vacation
+              const rfIntervals: { start: Date; end: Date }[] = [];
+              if (rf.gozo_flexivel && relGozoMap[rf.id]?.length > 0) {
+                for (const gp of relGozoMap[rf.id]) {
+                  rfIntervals.push({ start: parseISO(gp.data_inicio), end: parseISO(gp.data_fim) });
+                }
+              } else if (rf.gozo_diferente && rf.gozo_quinzena1_inicio) {
+                rfIntervals.push({ start: parseISO(rf.gozo_quinzena1_inicio), end: parseISO(rf.gozo_quinzena1_fim) });
+                if (rf.gozo_quinzena2_inicio) {
+                  rfIntervals.push({ start: parseISO(rf.gozo_quinzena2_inicio), end: parseISO(rf.gozo_quinzena2_fim) });
+                }
+              } else {
+                rfIntervals.push({ start: parseISO(rf.quinzena1_inicio), end: parseISO(rf.quinzena1_fim) });
+                if (rf.quinzena2_inicio) {
+                  rfIntervals.push({ start: parseISO(rf.quinzena2_inicio), end: parseISO(rf.quinzena2_fim) });
+                }
+              }
+
+              // Family: conflict when NO overlap (they want to coincide)
+              let hasOverlap = false;
+              for (const ni of newIntervals) {
+                for (const ri of rfIntervals) {
+                  if (ni.start <= ri.end && ni.end >= ri.start) {
+                    hasOverlap = true;
+                    break;
+                  }
+                }
+                if (hasOverlap) break;
+              }
+
+              if (!hasOverlap) {
+                const periodoStr = rfIntervals
+                  .map(i => `${format(i.start, "dd/MM")} - ${format(i.end, "dd/MM")}`)
+                  .join(" / ");
                 foundConflicts.push({
                   colaborador_nome: relatedName || "Familiar",
                   tipo: "Familiar sem coincidência",
-                  periodo: `${format(rfQ1Start, "dd/MM")} - ${format(rfQ1End, "dd/MM")}`,
+                  periodo: periodoStr,
                 });
               }
             }
