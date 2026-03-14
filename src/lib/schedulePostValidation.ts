@@ -3,8 +3,9 @@
 // Verifica TODAS as regras críticas para cada corretor
 // ═══════════════════════════════════════════════════════════
 
-import { format, getDay, differenceInDays, getISOWeek } from "date-fns";
+import { format, getDay, differenceInDays, getISOWeek, addDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { supabase } from "@/integrations/supabase/client";
 
 export interface PostValidationViolation {
   rule: string;
@@ -662,4 +663,105 @@ export function generateValidationReport(result: PostValidationResult): string {
 // ═══════════════════════════════════════════════════════════
 export function logValidationResult(result: PostValidationResult): void {
   console.log("\n" + generateValidationReport(result));
+}
+
+// ═══════════════════════════════════════════════════════════
+// DETECÇÃO INDEPENDENTE DE DEMANDAS NÃO ALOCADAS
+// Consulta Supabase para comparar configs vs alocações
+// Funciona tanto na geração quanto na re-validação
+// ═══════════════════════════════════════════════════════════
+export async function detectUnallocatedDemands(
+  assignments: { location_id: string; assignment_date: string; shift_type: string }[],
+  weekStartDate: string,
+  weekEndDate: string
+): Promise<UnallocatedDemand[]> {
+  const results: UnallocatedDemand[] = [];
+  const weekdays = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+
+  console.log(`🔍 detectUnallocatedDemands: ${weekStartDate} → ${weekEndDate}`);
+
+  // Buscar locais ativos com períodos e configs
+  const { data: locations } = await supabase.from("locations").select(`
+    id, name, location_type, shift_config_mode,
+    location_periods (id, period_type, start_date, end_date, period_day_configs (weekday, has_morning, has_afternoon))
+  `).eq("is_active", true);
+
+  // Buscar configs de data específica
+  const { data: allSpecificConfigs } = await supabase
+    .from("period_specific_day_configs")
+    .select("*");
+
+  const specificConfigsMap = new Map<string, any>();
+  allSpecificConfigs?.forEach((config: any) => {
+    specificConfigsMap.set(`${config.period_id}-${config.specific_date}`, config);
+  });
+
+  // Iterar cada dia do range
+  const start = new Date(weekStartDate + "T00:00:00");
+  const end = new Date(weekEndDate + "T00:00:00");
+
+  for (let date = new Date(start); date <= end; date = addDays(date, 1)) {
+    const dateStr = format(date, "yyyy-MM-dd");
+    const dayOfWeek = weekdays[date.getDay()];
+
+    for (const location of locations || []) {
+      // Encontrar período ativo para esta data
+      const period = (location as any).location_periods?.find(
+        (p: any) => p.start_date <= dateStr && p.end_date >= dateStr
+      );
+      if (!period) continue;
+
+      let expectedMorning = false;
+      let expectedAfternoon = false;
+
+      // Verificar config de data específica primeiro
+      const specificConfig = specificConfigsMap.get(`${period.id}-${dateStr}`);
+
+      if (specificConfig) {
+        expectedMorning = specificConfig.has_morning;
+        expectedAfternoon = specificConfig.has_afternoon;
+      } else if ((location as any).shift_config_mode === 'specific_date') {
+        // Modo de data específica mas sem config para este dia = sem demanda
+        continue;
+      } else {
+        // Fallback: config por dia da semana
+        const dayConfig = period.period_day_configs?.find((dc: any) => dc.weekday === dayOfWeek);
+        if (dayConfig) {
+          expectedMorning = dayConfig.has_morning;
+          expectedAfternoon = dayConfig.has_afternoon;
+        }
+      }
+
+      // Comparar com alocações existentes
+      const hasMorningAssignment = assignments.some(
+        a => a.location_id === location.id && a.assignment_date === dateStr && a.shift_type === "morning"
+      );
+      const hasAfternoonAssignment = assignments.some(
+        a => a.location_id === location.id && a.assignment_date === dateStr && a.shift_type === "afternoon"
+      );
+
+      if (expectedMorning && !hasMorningAssignment) {
+        console.error(`❌ FALTANDO: ${location.name} - ${dateStr} - Manhã`);
+        results.push({
+          locationId: location.id,
+          locationName: location.name,
+          date: dateStr,
+          shift: "morning"
+        });
+      }
+
+      if (expectedAfternoon && !hasAfternoonAssignment) {
+        console.error(`❌ FALTANDO: ${location.name} - ${dateStr} - Tarde`);
+        results.push({
+          locationId: location.id,
+          locationName: location.name,
+          date: dateStr,
+          shift: "afternoon"
+        });
+      }
+    }
+  }
+
+  console.log(`🔍 detectUnallocatedDemands: ${results.length} turnos não alocados encontrados`);
+  return results;
 }
