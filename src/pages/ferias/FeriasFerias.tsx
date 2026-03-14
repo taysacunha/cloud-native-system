@@ -36,6 +36,7 @@ import { FormularioPDFGenerator } from "@/components/ferias/relatorios/Formulari
 import { useSystemAccess } from "@/hooks/useSystemAccess";
 import { useUserRole } from "@/hooks/useUserRole";
 import { usePagination } from "@/hooks/usePagination";
+import { TablePagination } from "@/components/vendas/TableControls";
 
 // ========== Types ==========
 
