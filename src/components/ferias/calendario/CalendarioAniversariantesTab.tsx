@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { getYearOptions } from "@/lib/dateUtils";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { format, parseISO, getMonth, getDate } from "date-fns";
