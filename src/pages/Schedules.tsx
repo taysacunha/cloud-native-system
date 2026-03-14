@@ -47,7 +47,7 @@ import { format, startOfWeek, endOfWeek, addDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { generateWeeklySchedule, generateMonthlySchedule, generateSelectedWeeksSchedule, ScheduleAssignment, validateGeneratedSchedule, ValidationResult, GenerateMonthlyResult } from "@/lib/scheduleGenerator";
 import { RuleViolation } from "@/lib/scheduleValidator";
-import { validateGeneratedSchedule as postValidateSchedule, logValidationResult, PostValidationResult, UnallocatedDemand } from "@/lib/schedulePostValidation";
+import { validateGeneratedSchedule as postValidateSchedule, logValidationResult, PostValidationResult, UnallocatedDemand, detectUnallocatedDemands } from "@/lib/schedulePostValidation";
 import { normalizeText } from "@/lib/textUtils";
 import { ScheduleReplacementDialog } from "@/components/ScheduleReplacementDialog";
 import { SchedulePDFGenerator } from "@/components/SchedulePDFGenerator";
