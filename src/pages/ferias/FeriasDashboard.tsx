@@ -135,7 +135,7 @@ export default function FeriasDashboard() {
       const { data: feriasAtivas } = await supabase
         .from("ferias_ferias")
         .select("colaborador_id, quinzena1_inicio")
-        .in("status", ["ativa", "pendente", "aprovada"]);
+        .in("status", ["pendente", "aprovada", "em_gozo_q1", "q1_concluida", "em_gozo_q2", "em_gozo"]);
 
       const colaboradoresComFerias = new Set((feriasAtivas || []).map((f) => f.colaborador_id));
 
