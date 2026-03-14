@@ -294,7 +294,7 @@ export default function FeriasFerias() {
 
   const feriasStats = useMemo(() => ({
     total: filteredFerias.length,
-    emGozo: filteredFerias.filter(f => f.status === "em_gozo").length,
+    emGozo: filteredFerias.filter(f => isFeriasEmGozo(f.status)).length,
     excecoes: filteredFerias.filter(f => f.is_excecao).length,
     geradas: filteredFerias.filter(f => f.origem === "formulario_anual").length,
   }), [filteredFerias]);
