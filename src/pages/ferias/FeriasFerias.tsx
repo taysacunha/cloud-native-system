@@ -651,16 +651,14 @@ export default function FeriasFerias() {
                           })}
                         </TableBody>
                       </Table>
-                      {formPagination.totalPages > 1 && (
-                        <div className="flex items-center justify-between px-4 py-3 border-t">
-                          <p className="text-sm text-muted-foreground">{formPagination.startIndex + 1}-{formPagination.endIndex} de {filteredFormularios.length}</p>
-                          <div className="flex items-center gap-2">
-                            <Button variant="outline" size="sm" onClick={() => formPagination.setCurrentPage(formPagination.currentPage - 1)} disabled={formPagination.currentPage <= 1}><ChevronLeft className="h-4 w-4" /></Button>
-                            <span className="text-sm">{formPagination.currentPage} / {formPagination.totalPages}</span>
-                            <Button variant="outline" size="sm" onClick={() => formPagination.setCurrentPage(formPagination.currentPage + 1)} disabled={formPagination.currentPage >= formPagination.totalPages}><ChevronRight className="h-4 w-4" /></Button>
-                          </div>
-                        </div>
-                      )}
+                      <TablePagination
+                        currentPage={formPagination.currentPage}
+                        totalPages={formPagination.totalPages}
+                        itemsPerPage={formPerPage}
+                        onPageChange={formPagination.setCurrentPage}
+                        onItemsPerPageChange={(v) => { setFormPerPage(v); formPagination.setCurrentPage(1); }}
+                        totalItems={filteredFormularios.length}
+                      />
                     </div>
                   )}
                 </CardContent>
