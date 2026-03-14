@@ -374,8 +374,9 @@ export function FeriasDialog({ open, onOpenChange, ferias, anoReferencia, onSucc
     }
   }, [opcaoAdicional]);
 
-  // Reset form when ferias changes
+  // Reset form when ferias changes or dialog opens
   useEffect(() => {
+    if (!open) return;
     if (ferias) {
       const hasVenda = ferias.vender_dias && (ferias.dias_vendidos || 0) > 0;
       const hasGozo = ferias.gozo_diferente;
