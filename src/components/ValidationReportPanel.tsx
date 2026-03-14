@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { PostValidationResult, BrokerValidationReport, PostValidationViolation } from "@/lib/schedulePostValidation";
+import { PostValidationResult, BrokerValidationReport, PostValidationViolation, UnallocatedDemand } from "@/lib/schedulePostValidation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
