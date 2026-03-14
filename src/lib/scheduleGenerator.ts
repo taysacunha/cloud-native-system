@@ -2123,6 +2123,66 @@ function findBrokerForDemand(
       }
     }
 
+    // ═══════════════════════════════════════════════════════════
+    // SUNDAY LOOKAHEAD: Se estamos alocando sábado, verificar se usar
+    // este corretor deixaria alguma demanda de domingo sem NENHUM elegível.
+    // Se sim, e existir alternativa para o sábado, proteger este corretor.
+    // ═══════════════════════════════════════════════════════════
+    if (isSaturday && context.sundayDemandsForLookahead && context.allocatedDemandsRef) {
+      const sundayDateStr = format(addDays(demand.date, 1), "yyyy-MM-dd");
+      const pendingSundayDemands = context.sundayDemandsForLookahead.filter(sd => 
+        sd.dateStr === sundayDateStr && !context.allocatedDemandsRef!.has(`${sd.locationId}-${sd.dateStr}-${sd.shift}`)
+      );
+      
+      let shouldProtect = false;
+      for (const sd of pendingSundayDemands) {
+        // Contar quantos elegíveis RESTAM para este domingo se usarmos este corretor no sábado
+        const remainingForSunday = sd.eligibleBrokerIds.filter(eid => {
+          if (eid === broker.brokerId) return false; // Seria bloqueado pela Regra 9
+          const eb = context.brokerQueue.find(b => b.brokerId === eid);
+          if (!eb) return false;
+          if (!eb.availableWeekdays.includes(sd.dayOfWeek)) return false;
+          // Já bloqueado por sábado existente?
+          const hasSat = context.assignments.some(a => a.broker_id === eid && a.assignment_date === demand.dateStr);
+          if (hasSat) return false;
+          if (context.saturdayInternalWorkers?.has(eid)) return false;
+          return true;
+        });
+        
+        if (remainingForSunday.length === 0) {
+          shouldProtect = true;
+          console.log(`   🛡️ SUNDAY LOOKAHEAD: ${broker.brokerName} é o ÚNICO elegível para ${sd.locationName} domingo ${sd.shift} - verificando alternativa de sábado`);
+          break;
+        }
+      }
+      
+      if (shouldProtect) {
+        // Verificar se existe outro corretor válido para ESTE sábado
+        const hasAlternative = sortedQueue.some(alt => {
+          if (alt.brokerId === broker.brokerId) return false;
+          if (!demand.eligibleBrokerIds.includes(alt.brokerId)) return false;
+          if (!alt.availableWeekdays.includes(demand.dayOfWeek)) return false;
+          const absCheck = checkAbsoluteRules(alt, demand, context);
+          return absCheck.allowed;
+        });
+        
+        if (hasAlternative) {
+          console.log(`   🛡️ SUNDAY LOOKAHEAD: ${broker.brokerName} PROTEGIDO para domingo - pulando sábado (alternativa existe)`);
+          if (collectBlockedBrokers) {
+            blockedBrokers.push({
+              brokerId: broker.brokerId,
+              brokerName: broker.brokerName,
+              rule: "SUNDAY LOOKAHEAD",
+              reason: `Protegido: único elegível para domingo`
+            });
+          }
+          continue;
+        } else {
+          console.log(`   ⚠️ SUNDAY LOOKAHEAD: ${broker.brokerName} protegido para domingo MAS sem alternativa de sábado - alocando mesmo`);
+        }
+      }
+    }
+
     // Encontrou corretor válido
     return { broker, reason: `Pass ${pass}`, blockedBrokers: collectBlockedBrokers ? blockedBrokers : undefined };
   }
