@@ -494,11 +494,22 @@ export default function FeriasFerias() {
                         <TableRow key={f.id}>
                           <TableCell className="font-medium">{f.colaborador?.nome || "—"}</TableCell>
                           <TableCell>{f.colaborador?.setor_titular?.nome || "—"}</TableCell>
-                          <TableCell className="text-sm">{f.gozo_diferente && f.gozo_quinzena1_inicio ? formatPeriodo(f.gozo_quinzena1_inicio, f.gozo_quinzena1_fim!) : formatPeriodo(f.quinzena1_inicio, f.quinzena1_fim)}</TableCell>
                           <TableCell className="text-sm">
-                            {f.quinzena2_inicio && f.quinzena2_fim
-                              ? (f.gozo_diferente && f.gozo_quinzena2_inicio ? formatPeriodo(f.gozo_quinzena2_inicio, f.gozo_quinzena2_fim!) : formatPeriodo(f.quinzena2_inicio, f.quinzena2_fim))
-                              : <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/20 gap-1 text-xs"><Clock className="h-3 w-3" />Pendente</Badge>
+                            {f.gozo_flexivel && gozoPeriodosByFeriasId[f.id]?.length
+                              ? gozoPeriodosByFeriasId[f.id].map((p, i) => (
+                                  <div key={p.id}>{formatPeriodo(p.data_inicio, p.data_fim)} <span className="text-muted-foreground">({p.dias}d)</span></div>
+                                ))
+                              : f.gozo_diferente && f.gozo_quinzena1_inicio
+                                ? formatPeriodo(f.gozo_quinzena1_inicio, f.gozo_quinzena1_fim!)
+                                : formatPeriodo(f.quinzena1_inicio, f.quinzena1_fim)
+                            }
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {f.gozo_flexivel && gozoPeriodosByFeriasId[f.id]?.length
+                              ? <span className="text-muted-foreground text-xs">Ver 1º Período</span>
+                              : f.quinzena2_inicio && f.quinzena2_fim
+                                ? (f.gozo_diferente && f.gozo_quinzena2_inicio ? formatPeriodo(f.gozo_quinzena2_inicio, f.gozo_quinzena2_fim!) : formatPeriodo(f.quinzena2_inicio, f.quinzena2_fim))
+                                : <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/20 gap-1 text-xs"><Clock className="h-3 w-3" />Pendente</Badge>
                             }
                           </TableCell>
                           <TableCell>{f.vender_dias && f.dias_vendidos ? <Badge variant="outline" className="text-xs">{f.dias_vendidos} dias</Badge> : <span className="text-muted-foreground text-xs">—</span>}</TableCell>
