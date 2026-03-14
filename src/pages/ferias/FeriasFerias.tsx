@@ -156,7 +156,7 @@ export default function FeriasFerias() {
   const [selectedFormulario, setSelectedFormulario] = useState<FormularioAnual | null>(null);
   const [formulariosOpen, setFormulariosOpen] = useState(false);
 
-  const years = Array.from({ length: 5 }, (_, i) => (currentYear + 1 - i).toString());
+  const years = getYearOptions(3, 3).map(String);
 
   // ========== Queries ==========
 
