@@ -1869,18 +1869,17 @@ function findBrokerForDemand(
         return a.externalShiftCount - b.externalShiftCount;
       }
       
-      // Para NÃO-DOMINGOS: lógica original com boost para sábado interno
-      // PRIORIDADE 0.5: Se é dia de semana, Saturday internal workers têm prioridade
-      // (compensam a impossibilidade de pegar sáb/dom externo)
+      // Para NÃO-DOMINGOS: boost para quem precisa de compensação
+      // PRIORIDADE 0.5: Corretores com workedSaturdayLastWeek OU saturdayInternalWorkers
+      // que ainda precisam de mais externos recebem prioridade em dias de semana
       if (!isSaturday && !isSunday) {
-        const aIsSatInt = context.saturdayInternalWorkers?.has(a.brokerId) ? 1 : 0;
-        const bIsSatInt = context.saturdayInternalWorkers?.has(b.brokerId) ? 1 : 0;
-        // Quem é Saturday internal worker E ainda tem crédito pendente recebe boost
-        if (aIsSatInt !== bIsSatInt) {
+        const aNeedsCompensation = (a.workedSaturdayLastWeek || context.saturdayInternalWorkers?.has(a.brokerId)) ? 1 : 0;
+        const bNeedsCompensation = (b.workedSaturdayLastWeek || context.saturdayInternalWorkers?.has(b.brokerId)) ? 1 : 0;
+        if (aNeedsCompensation !== bNeedsCompensation) {
           const aNeedsMore = a.externalShiftCount < a.targetExternals;
           const bNeedsMore = b.externalShiftCount < b.targetExternals;
-          if (aIsSatInt && aNeedsMore && !bIsSatInt) return -1;
-          if (bIsSatInt && bNeedsMore && !aIsSatInt) return 1;
+          if (aNeedsCompensation && aNeedsMore && !bNeedsCompensation) return -1;
+          if (bNeedsCompensation && bNeedsMore && !aNeedsCompensation) return 1;
         }
       }
       
