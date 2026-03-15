@@ -1839,7 +1839,21 @@ function findBrokerForDemand(
         return a.externalShiftCount - b.externalShiftCount;
       }
       
-      // Para NÃO-DOMINGOS: lógica original
+      // Para NÃO-DOMINGOS: lógica original com boost para sábado interno
+      // PRIORIDADE 0.5: Se é dia de semana, Saturday internal workers têm prioridade
+      // (compensam a impossibilidade de pegar sáb/dom externo)
+      if (!isSaturday && !isSunday) {
+        const aIsSatInt = context.saturdayInternalWorkers?.has(a.brokerId) ? 1 : 0;
+        const bIsSatInt = context.saturdayInternalWorkers?.has(b.brokerId) ? 1 : 0;
+        // Quem é Saturday internal worker E ainda tem crédito pendente recebe boost
+        if (aIsSatInt !== bIsSatInt) {
+          const aNeedsMore = a.externalShiftCount < a.targetExternals;
+          const bNeedsMore = b.externalShiftCount < b.targetExternals;
+          if (aIsSatInt && aNeedsMore && !bIsSatInt) return -1;
+          if (bIsSatInt && bNeedsMore && !aIsSatInt) return 1;
+        }
+      }
+      
       // PRIORIDADE 1: Quem tem MENOS externos (distribuição balanceada)
       if (a.externalShiftCount !== b.externalShiftCount) {
         return a.externalShiftCount - b.externalShiftCount;
