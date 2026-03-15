@@ -852,10 +852,8 @@ function canAnyoneStillReachTwo(
       // Verificar dia da semana disponível
       if (!broker.availableWeekdays.includes(demand.dayOfWeek)) continue;
       
-      // Sábado interno → bloqueia sábado e domingo externo
-      const isSaturday = demand.dayOfWeek === "saturday";
-      const isSunday = demand.dayOfWeek === "sunday";
-      if (isSaturdayInternalWorker && (isSaturday || isSunday)) continue;
+      // REMOVIDO: Bloqueio fantasma de sáb/dom para saturdayInternalWorkers
+      // O bloqueio real ocorre após ETAPA 8.9 via alocações reais
       
       // Sexta com sábado externo
       if (isSaturdayExternalWorker && demand.dayOfWeek === "friday" && broker.externalShiftCount >= 1) continue;
