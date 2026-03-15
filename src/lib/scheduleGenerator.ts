@@ -1872,7 +1872,7 @@ function rebalanceDistributionViaSwaps(
         if (!demandForAlloc) continue;
 
         for (const underBroker of underBrokers) {
-          if (underBroker.externalShiftCount >= 2) continue; // Já saiu do "under"
+          if (underBroker.externalShiftCount > minCount) continue; // Já saiu do "under"
 
           // Verificar elegibilidade
           if (!demandForAlloc.eligibleBrokerIds.includes(underBroker.brokerId)) continue;
