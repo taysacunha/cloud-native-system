@@ -4583,6 +4583,29 @@ async function generateWeeklyScheduleWithAccumulator(
     }
   }
 
+  // ═══════════════════════════════════════════════════════════
+  // ETAPA 8.12: REBALANCEAMENTO FINAL PÓS-EMERGÊNCIA
+  // Rodar novamente após ETAPA 8.11 para corrigir desequilíbrios criados
+  // ═══════════════════════════════════════════════════════════
+  console.log("\n⚖️ ETAPA 8.12: REBALANCEAMENTO FINAL PÓS-EMERGÊNCIA...");
+  const finalRebalance = rebalanceDistributionViaSwaps(context, possibleDemands, allocatedDemands, internalLocIds, relaxedAllocations);
+  if (finalRebalance.swapsSuccessful > 0) {
+    console.log(`   ✅ Rebalanceamento final: ${finalRebalance.swapsSuccessful} trocas realizadas`);
+  }
+  
+  // Log distribuição final
+  const finalDistribution = new Map<number, string[]>();
+  for (const broker of context.brokerQueue.filter(b => b.externalLocationCount > 0)) {
+    if (!finalDistribution.has(broker.externalShiftCount)) {
+      finalDistribution.set(broker.externalShiftCount, []);
+    }
+    finalDistribution.get(broker.externalShiftCount)!.push(broker.brokerName);
+  }
+  console.log(`   📊 DISTRIBUIÇÃO FINAL DE EXTERNOS:`);
+  for (const [count, names] of [...finalDistribution.entries()].sort((a, b) => a[0] - b[0])) {
+    console.log(`      ${count} externos: ${names.join(', ')}`);
+  }
+
   // Relatório de qualidade
   const finalUnallocated = possibleDemands.filter(d => 
     !allocatedDemands.has(`${d.locationId}-${d.dateStr}-${d.shift}`)
