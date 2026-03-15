@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { PostValidationResult, BrokerValidationReport, PostValidationViolation, UnallocatedDemand } from "@/lib/schedulePostValidation";
+import { BrokerAllocationDiagnostic } from "@/lib/scheduleGenerator";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,16 +19,18 @@ import {
   Search,
   Filter,
   LayoutList,
-  Layers
+  Layers,
+  HelpCircle
 } from "lucide-react";
 
 interface ValidationReportPanelProps {
   result: PostValidationResult | null;
   onClose: () => void;
+  brokerDiagnostics?: BrokerAllocationDiagnostic[];
 }
 
 type SeverityFilter = "all" | "error" | "warning";
-type ViewMode = "broker" | "rule";
+type ViewMode = "broker" | "rule" | "diagnostic";
 
 // ═══════════════════════════════════════════════════════════
 // RULE EXPLANATIONS MAP
