@@ -2883,7 +2883,7 @@ async function generateWeeklyScheduleWithAccumulator(
           if (countIdentified >= maxBrokers) break;
           
           saturdayInternalWorkers.add(candidate.broker_id);
-          console.log(`   🏢 ${candidate.broker_name}: reservado para Tambaú sábado (${candidate.times_worked || 0} sábados, pos ${candidate.queue_position}) → target externo = 1`);
+          console.log(`   🏢 ${candidate.broker_name}: reservado para Tambaú sábado (${candidate.times_worked || 0} sábados, pos ${candidate.queue_position})`);
           countIdentified++;
         }
         
