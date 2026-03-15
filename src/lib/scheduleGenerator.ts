@@ -2568,13 +2568,13 @@ function findBrokerForDemand(
     // NOVA REGRA: EVITAR SEXTA PARA QUEM TRABALHA SÁBADO
     // Evita dias consecutivos (sexta + sábado)
     // ═══════════════════════════════════════════════════════════
-    if (worksSaturday && demand.dayOfWeek === "friday") {
+    if (worksSaturday && demand.dayOfWeek === "friday" && maxAllowedExternals <= 2) {
       if (collectBlockedBrokers) {
         blockedBrokers.push({
           brokerId: broker.brokerId,
           brokerName: broker.brokerName,
-          rule: "REGRA: Evitar sexta com sábado",
-          reason: `Trabalha sábado - evitar consecutivo (sexta)`
+          rule: "REGRA: Evitar sexta com sábado (flexível)",
+          reason: `Trabalha sábado - evitar consecutivo (sexta) nos níveis 1-2`
         });
       }
       continue;
