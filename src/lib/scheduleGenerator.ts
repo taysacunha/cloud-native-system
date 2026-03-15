@@ -3797,7 +3797,7 @@ async function generateWeeklyScheduleWithAccumulator(
   ).length;
 
   const allocatedDemands = new Set<string>();
-  let allocatedPass1 = 0, allocatedPass2 = 0, allocatedPass3 = 0, allocatedPass4 = 0, allocatedPass5 = 0;
+  // Contadores movidos para após o loop de níveis
   const relaxedAllocations: { demand: string; pass: number; reason: string }[] = [];
 
   // ═══════════════════════════════════════════════════════════
