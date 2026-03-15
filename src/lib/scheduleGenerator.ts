@@ -3928,7 +3928,7 @@ async function generateWeeklyScheduleWithAccumulator(
             const compensationBrokers = context.brokerQueue
               .filter(b => {
                 if (!demand.eligibleBrokerIds.includes(b.brokerId)) return false;
-                if (b.externalShiftCount >= MAX_EXTERNAL_SHIFTS_PER_WEEK) return false;
+                if (b.externalShiftCount >= MAX_EXTERNAL_SHIFTS_HARD_CAP) return false;
                 if (!b.workedSaturdayLastWeek && !context.saturdayInternalWorkers?.has(b.brokerId)) return false;
                 return true;
               })
