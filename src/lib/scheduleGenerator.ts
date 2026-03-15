@@ -2068,6 +2068,25 @@ function findBrokerForDemand(
     }
 
     // ═══════════════════════════════════════════════════════════
+    // REGRA 8: Dias consecutivos — via helper relaxável
+    // Relaxa para corretores com <2 externos (equidade)
+    // Mantém bloqueio estrito para quem já tem 2+
+    // ═══════════════════════════════════════════════════════════
+    const allowRelaxRule8ForThisBroker = broker.externalShiftCount < 2;
+    const rule8Check = checkTrulyInviolableRulesWithRelaxation(broker, demand, context, allowRelaxRule8ForThisBroker);
+    if (!rule8Check.allowed) {
+      if (collectBlockedBrokers) {
+        blockedBrokers.push({
+          brokerId: broker.brokerId,
+          brokerName: broker.brokerName,
+          rule: rule8Check.rule || "REGRA 8",
+          reason: rule8Check.reason
+        });
+      }
+      continue;
+    }
+
+    // ═══════════════════════════════════════════════════════════
     // NOVA REGRA: PROTEÇÃO DO BESSA EM DIAS DE SEMANA
     // Com apenas 3 corretores no Bessa, no máximo 2 podem ter externos
     // O terceiro DEVE permanecer no Bessa para garantir cobertura
