@@ -2266,7 +2266,8 @@ const Schedules = () => {
               </div>
               <ValidationReportPanel 
                 result={postValidationResult} 
-                onClose={() => setPostValidationResult(null)} 
+                onClose={() => setPostValidationResult(null)}
+                brokerDiagnostics={(() => { const { getLastGenerationTrace } = require("@/lib/scheduleGenerator"); return getLastGenerationTrace()?.brokerDiagnostics; })()}
               />
             </div>
           ) : (
