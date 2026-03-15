@@ -942,10 +942,11 @@ function checkAbsoluteRules(
   demand: ExternalDemand,
   context: AllocationContext
 ): { allowed: boolean; reason: string; rule: string } {
-  // REGRA ABSOLUTA 1: Máximo de 2 externos por semana
-  if (broker.externalShiftCount >= MAX_EXTERNAL_SHIFTS_PER_WEEK) {
-    return { allowed: false, reason: `Já tem ${broker.externalShiftCount} externos`, rule: "REGRA 1: Máx 2 externos/semana" };
-  }
+  // REGRA 1 REMOVIDA DAQUI: O limite de externos agora é controlado EXCLUSIVAMENTE
+  // pelo GATE DE NÍVEL em findBrokerForDemand (maxAllowedExternals).
+  // Manter aqui causava duplo bloqueio que impedia os níveis 3/4 de funcionar.
+  // Hard cap (4) é verificado no gate de nível.
+
 
   // REGRA ABSOLUTA 2: Deve estar na lista de elegíveis
   if (!demand.eligibleBrokerIds.includes(broker.brokerId)) {
