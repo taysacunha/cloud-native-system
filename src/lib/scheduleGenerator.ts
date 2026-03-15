@@ -3337,7 +3337,102 @@ async function generateWeeklyScheduleWithAccumulator(
   // ═══════════════════════════════════════════════════════════
   // ETAPA 8.8: DESCONSECUTIVAR (antes do último recurso)
   // ═══════════════════════════════════════════════════════════
-  const deConsecutiveResult = deConsecutivizeExternals(context, possibleDemands, internalLocIds);
+  
+  // ═══════════════════════════════════════════════════════════
+  // ETAPA 8.8.1: REBALANCEAMENTO ATIVO POR SWAP (Chain Swap)
+  // Identifica corretores com 3+ externos e tenta trocar com quem tem <2
+  // ═══════════════════════════════════════════════════════════
+  console.log("\n🔄 ETAPA 8.8.1: REBALANCEAMENTO ATIVO POR SWAP...");
+  
+  const overloadedBrokers = context.brokerQueue.filter(b => b.externalShiftCount >= 3);
+  const underloadedBrokers = context.brokerQueue.filter(b => b.externalShiftCount < 2);
+  
+  console.log(`   📊 Corretores sobrecarregados (3+): ${overloadedBrokers.length}`);
+  console.log(`   📊 Corretores sub-alocados (<2): ${underloadedBrokers.length}`);
+  
+  let swapCount = 0;
+  
+  if (overloadedBrokers.length > 0 && underloadedBrokers.length > 0) {
+    for (const overBroker of overloadedBrokers) {
+      if (overBroker.externalShiftCount <= 2) continue; // Already balanced
+      
+      // Find assignments belonging to this overloaded broker
+      const overBrokerAssignments = context.assignments.filter(a => 
+        a.broker_id === overBroker.brokerId && 
+        !context.internalLocationIds.has(a.location_id)
+      );
+      
+      for (const assignment of overBrokerAssignments) {
+        if (overBroker.externalShiftCount <= 2) break; // Balanced now
+        
+        // Find an underloaded broker who can take this assignment
+        for (const underBroker of underloadedBrokers) {
+          if (underBroker.externalShiftCount >= 2) continue; // Already reached 2
+          
+          // Build a pseudo-demand to check eligibility
+          const demandForCheck = possibleDemands.find(d => 
+            d.locationId === assignment.location_id && 
+            d.dateStr === assignment.assignment_date && 
+            d.shift === assignment.shift_type
+          );
+          
+          if (!demandForCheck) continue;
+          if (!demandForCheck.eligibleBrokerIds.includes(underBroker.brokerId)) continue;
+          
+          // Check inviolable rules for the underloaded broker
+          const check = checkTrulyInviolableRules(underBroker, demandForCheck, context);
+          if (!check.allowed) continue;
+          
+          // Check the underloaded broker doesn't already have an external on this day
+          const underBrokerHasExternalOnDay = context.assignments.some(a => 
+            a.broker_id === underBroker.brokerId && 
+            a.assignment_date === assignment.assignment_date &&
+            !context.internalLocationIds.has(a.location_id)
+          );
+          if (underBrokerHasExternalOnDay) continue;
+          
+          // ═══ EXECUTE SWAP ═══
+          // Remove assignment from overloaded broker
+          const assignmentIdx = context.assignments.indexOf(assignment);
+          if (assignmentIdx === -1) continue;
+          
+          context.assignments.splice(assignmentIdx, 1);
+          overBroker.externalShiftCount--;
+          overBroker.externalCredit++;
+          
+          // Remove from dailyExternalAssignments
+          const daySet = context.dailyExternalAssignments.get(assignment.assignment_date);
+          if (daySet) daySet.delete(overBroker.brokerId);
+          
+          // Allocate to underloaded broker
+          allocateDemand(demandForCheck, underBroker, context);
+          
+          swapCount++;
+          console.log(`   ✅ SWAP: ${demandForCheck.locationName} ${demandForCheck.dateStr} ${demandForCheck.shift}: ${overBroker.brokerName} (${overBroker.externalShiftCount + 1}→${overBroker.externalShiftCount}) → ${underBroker.brokerName} (${underBroker.externalShiftCount - 1}→${underBroker.externalShiftCount})`);
+          break; // Move to next assignment of overloaded broker
+        }
+      }
+    }
+  }
+  
+  console.log(`   📊 Chain Swap: ${swapCount} trocas realizadas`);
+  
+  // Log final distribution after swap
+  const postSwapDist = {
+    with0: context.brokerQueue.filter(b => b.externalShiftCount === 0).length,
+    with1: context.brokerQueue.filter(b => b.externalShiftCount === 1).length,
+    with2: context.brokerQueue.filter(b => b.externalShiftCount === 2).length,
+    with3: context.brokerQueue.filter(b => b.externalShiftCount >= 3).length,
+  };
+  console.log(`\n   📊 DISTRIBUIÇÃO APÓS CHAIN SWAP:`);
+  console.log(`      0 externos: ${postSwapDist.with0} corretores`);
+  console.log(`      1 externo:  ${postSwapDist.with1} corretores`);
+  console.log(`      2 externos: ${postSwapDist.with2} corretores`);
+  console.log(`      3+ externos: ${postSwapDist.with3} corretores`);
+  
+  if (postSwapDist.with0 + postSwapDist.with1 > 0 && postSwapDist.with3 > 0) {
+    console.log(`\n   ⚠️ ALERTA: Desequilíbrio residual - ${postSwapDist.with3} corretor(es) com 3+ enquanto ${postSwapDist.with0 + postSwapDist.with1} têm <2`);
+  }
   
   // ═══════════════════════════════════════════════════════════
   // ETAPA 8.9: ALOCAÇÃO DE PLANTÕES INTERNOS (SÁBADO)
