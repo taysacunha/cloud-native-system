@@ -970,7 +970,7 @@ function checkAbsoluteRules(
   // REGRA ABSOLUTA 1: Máximo de externos por semana
   // RELAXAMENTO: Em passes 4-5, corretores com compensação pendente (sábado) podem ir até HARD_CAP
   const hasCompensation = broker.workedSaturdayLastWeek || context.saturdayInternalWorkers?.has(broker.brokerId);
-  const effectiveLimit = (pass >= 4 && hasCompensation) ? MAX_EXTERNAL_SHIFTS_HARD_CAP : MAX_EXTERNAL_SHIFTS_PER_WEEK;
+  const effectiveLimit = (pass >= 3 && hasCompensation) ? MAX_EXTERNAL_SHIFTS_HARD_CAP : MAX_EXTERNAL_SHIFTS_PER_WEEK;
   if (broker.externalShiftCount >= effectiveLimit) {
     return { allowed: false, reason: `Já tem ${broker.externalShiftCount} externos (máx ${effectiveLimit}, pass ${pass})`, rule: "REGRA 1: Máx externos/semana" };
   }
