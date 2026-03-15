@@ -3801,9 +3801,22 @@ async function generateWeeklyScheduleWithAccumulator(
     
     // GATE para níveis 3+: verificar se todos elegíveis já atingiram level-1
     if (level >= 3) {
-      const externalEligible = context.brokerQueue.filter(b => b.externalLocationCount > 0);
+      // Gate inteligente: calcular globalMin apenas entre brokers que podem receber alguma demanda restante
+      const unallocatedDemands = possibleDemands.filter(d => !allocatedDemands.has(`${d.locationId}-${d.dateStr}-${d.shift}`));
+      const externalEligible = context.brokerQueue.filter(b => {
+        if (b.externalLocationCount <= 0) return false;
+        // Excluir brokers que não podem receber NENHUMA demanda restante (por elegibilidade real, não por Regra 10)
+        const canReceiveAny = unallocatedDemands.some(d => {
+          if (!d.eligibleBrokerIds.includes(b.brokerId)) return false;
+          const check = checkTrulyInviolableRules(b, d, context);
+          return check.allowed;
+        });
+        return canReceiveAny;
+      });
+      
       if (externalEligible.length > 0) {
         let globalMin = Math.min(...externalEligible.map(b => b.externalShiftCount));
+        console.log(`   📊 Gate nível ${level}: ${externalEligible.length} brokers elegíveis para demandas restantes, globalMin=${globalMin}`);
         
         if (globalMin < level - 1) {
           console.log(`   🚫 GATE NÍVEL ${level}: globalMin=${globalMin} < ${level - 1} — tentando chain swaps extras`);
@@ -3812,8 +3825,23 @@ async function generateWeeklyScheduleWithAccumulator(
           const extraChainResult = chainSwapForUnallocated(context, possibleDemands, allocatedDemands, internalLocIds, relaxedAllocations);
           console.log(`   🔗 Chain swaps extras: ${extraChainResult.swapsSuccessful} realizados`);
           
-          // Re-verificar
-          globalMin = Math.min(...externalEligible.map(b => b.externalShiftCount));
+          // Re-calcular com filtro inteligente
+          const stillEligible = context.brokerQueue.filter(b => {
+            if (b.externalLocationCount <= 0) return false;
+            const updatedUnalloc = possibleDemands.filter(d => !allocatedDemands.has(`${d.locationId}-${d.dateStr}-${d.shift}`));
+            return updatedUnalloc.some(d => {
+              if (!d.eligibleBrokerIds.includes(b.brokerId)) return false;
+              const check = checkTrulyInviolableRules(b, d, context);
+              return check.allowed;
+            });
+          });
+          
+          if (stillEligible.length > 0) {
+            globalMin = Math.min(...stillEligible.map(b => b.externalShiftCount));
+          } else {
+            globalMin = level - 1; // Ninguém mais elegível, liberar gate
+          }
+          
           if (globalMin < level - 1) {
             console.log(`   ⚠️ GATE NÍVEL ${level} AINDA BLOQUEADO: globalMin=${globalMin} — pulando nível ${level}`);
             continue;
@@ -3822,6 +3850,8 @@ async function generateWeeklyScheduleWithAccumulator(
         } else {
           console.log(`   ✅ GATE NÍVEL ${level} OK: globalMin=${globalMin} >= ${level - 1}`);
         }
+      } else {
+        console.log(`   ℹ️ GATE NÍVEL ${level}: Nenhum broker elegível para demandas restantes — liberando gate`);
       }
     }
     
