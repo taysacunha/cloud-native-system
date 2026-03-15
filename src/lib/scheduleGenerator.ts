@@ -3455,6 +3455,13 @@ async function generateWeeklyScheduleWithAccumulator(
     console.log(`\n   ⚠️ ALERTA: Desequilíbrio residual - ${postSwapDist.with3} corretor(es) com 3+ enquanto ${postSwapDist.with0 + postSwapDist.with1} têm <2`);
   }
   
+  // WARNING: Listar Saturday internal workers com 3+ externos (compensação ativada)
+  for (const broker of context.brokerQueue) {
+    if (context.saturdayInternalWorkers?.has(broker.brokerId) && broker.externalShiftCount >= 3) {
+      console.log(`   ⚠️ WARNING: ${broker.brokerName} recebeu ${broker.externalShiftCount} externos (compensação por sábado interno)`);
+    }
+  }
+  
   // ═══════════════════════════════════════════════════════════
   // ETAPA 8.9: ALOCAÇÃO DE PLANTÕES INTERNOS (SÁBADO)
   // Corretores pré-identificados em saturdayInternalWorkers
