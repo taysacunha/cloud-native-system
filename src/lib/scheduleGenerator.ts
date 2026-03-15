@@ -4185,6 +4185,106 @@ async function generateWeeklyScheduleWithAccumulator(
   }
 
   // ═══════════════════════════════════════════════════════════
+  // ETAPA 8.11b: SACRIFICAR SÁBADO INTERNO PARA COBRIR EXTERNO
+  // "Externos acima de tudo" — remove alocação de sábado interno
+  // para liberar corretor para demanda externa pendente
+  // Mínimo de 1 corretor por local interno no sábado é preservado
+  // ═══════════════════════════════════════════════════════════
+  const postFinalUnallocated = possibleDemands.filter(d => 
+    !allocatedDemands.has(`${d.locationId}-${d.dateStr}-${d.shift}`)
+  );
+
+  if (postFinalUnallocated.length > 0 && saturdayDate) {
+    console.log(`\n🔥 ETAPA 8.11b: SACRIFÍCIO DE SÁBADO INTERNO — ${postFinalUnallocated.length} demandas externas pendentes`);
+    const saturdayDateStr = format(saturdayDate, "yyyy-MM-dd");
+    
+    for (const demand of postFinalUnallocated) {
+      const demandKey = `${demand.locationId}-${demand.dateStr}-${demand.shift}`;
+      if (allocatedDemands.has(demandKey)) continue;
+      
+      // Buscar corretores elegíveis que estão alocados no sábado interno
+      for (const brokerId of demand.eligibleBrokerIds) {
+        const broker = context.brokerQueue.find(b => b.brokerId === brokerId);
+        if (!broker) continue;
+        if (broker.externalShiftCount >= MAX_EXTERNAL_SHIFTS_HARD_CAP) continue;
+        if (!broker.availableWeekdays.includes(demand.dayOfWeek)) continue;
+        
+        // Encontrar alocação de sábado interno deste corretor
+        const saturdayInternalAssignment = context.assignments.find(a =>
+          a.broker_id === brokerId &&
+          a.assignment_date === saturdayDateStr &&
+          context.internalLocationIds.has(a.location_id)
+        );
+        
+        if (!saturdayInternalAssignment) continue;
+        
+        // Verificar mínimo de 1 no local interno
+        const otherBrokersAtSameInternal = context.assignments.filter(a =>
+          a.location_id === saturdayInternalAssignment.location_id &&
+          a.assignment_date === saturdayDateStr &&
+          a.shift_type === saturdayInternalAssignment.shift_type &&
+          a.broker_id !== brokerId
+        );
+        
+        if (otherBrokersAtSameInternal.length < 1) {
+          console.log(`   ⚠️ ${broker.brokerName}: não pode sacrificar — seria o último no sábado interno`);
+          continue;
+        }
+        
+        // Verificar regras invioláveis (exceto weekend que será resolvida pela remoção)
+        const checkResult = checkTrulyInviolableRulesWithRelaxation(broker, demand, context, true);
+        if (!checkResult.allowed) continue;
+        
+        // ═══ EXECUTAR SACRIFÍCIO ═══
+        const internalIdx = context.assignments.indexOf(saturdayInternalAssignment);
+        if (internalIdx === -1) continue;
+        
+        const sacrificedLocation = saturdayInternalAssignment.location_id;
+        context.assignments.splice(internalIdx, 1);
+        
+        // Remover do saturdayInternalWorkers
+        context.saturdayInternalWorkers?.delete(brokerId);
+        
+        // Alocar na demanda externa
+        allocateDemand(demand, broker, context);
+        allocatedDemands.add(demandKey);
+        
+        relaxedAllocations.push({
+          demand: `${demand.locationName} ${demand.dateStr} ${demand.shift}`,
+          pass: 11,
+          reason: `SACRIFÍCIO INTERNO: ${broker.brokerName} removido do sábado interno para cobrir externo`
+        });
+        
+        console.log(`   🔥 SACRIFÍCIO: ${broker.brokerName} removido do sábado interno → ${demand.locationName} ${demand.dateStr} ${demand.shift}`);
+        console.log(`   ⚠️ WARNING: INTERNO_COBERTURA_REDUZIDA no sábado para local ${sacrificedLocation}`);
+        break;
+      }
+    }
+    
+    // Diagnóstico final
+    const trulyFinal = postFinalUnallocated.filter(d => 
+      !allocatedDemands.has(`${d.locationId}-${d.dateStr}-${d.shift}`)
+    );
+    if (trulyFinal.length > 0) {
+      console.log(`\n   ❌ DIAGNÓSTICO FINAL: ${trulyFinal.length} demandas IMPOSSÍVEIS após todos os esforços:`);
+      for (const demand of trulyFinal) {
+        console.log(`      🔍 ${demand.locationName} ${demand.dateStr} ${demand.shift}`);
+        const top3 = demand.eligibleBrokerIds.slice(0, 3);
+        for (const bId of top3) {
+          const broker = context.brokerQueue.find(b => b.brokerId === bId);
+          if (!broker) continue;
+          const reasons: string[] = [];
+          if (broker.externalShiftCount >= MAX_EXTERNAL_SHIFTS_HARD_CAP) reasons.push(`HARD CAP (${broker.externalShiftCount})`);
+          if (!broker.availableWeekdays.includes(demand.dayOfWeek)) reasons.push(`Dia indisponível`);
+          const invCheck = checkTrulyInviolableRulesWithRelaxation(broker, demand, context, true);
+          if (!invCheck.allowed) reasons.push(invCheck.reason);
+          console.log(`         - ${broker.brokerName} (${broker.externalShiftCount} ext): ${reasons.join('; ') || 'desconhecido'}`);
+        }
+      }
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
   // ETAPA 8.10: ALOCAÇÃO DE PLANTÕES INTERNOS (SEGUNDA A SEXTA)
   // EXECUTADA APÓS finalizar TODOS os externos para não interferir
   // Regra: interno pode coexistir com externo no MESMO dia se em TURNOS diferentes
