@@ -2552,13 +2552,13 @@ function findBrokerForDemand(
     const worksSaturdayExternal = context.saturdayExternalWorkers?.has(broker.brokerId);
     const worksSaturday = worksSaturdayInternal || worksSaturdayExternal;
     
-    if (worksSaturday && broker.externalShiftCount >= 1 && !isSaturday) {
+    if (worksSaturday && broker.externalShiftCount >= 1 && !isSaturday && maxAllowedExternals <= 2) {
       if (collectBlockedBrokers) {
         blockedBrokers.push({
           brokerId: broker.brokerId,
           brokerName: broker.brokerName,
-          rule: "REGRA: Sábado + 1 externo máx",
-          reason: `Trabalha sábado - limite de 1 externo atingido (tem ${broker.externalShiftCount})`
+          rule: "REGRA: Sábado + 1 externo máx (flexível)",
+          reason: `Trabalha sábado - limite de 1 externo nos níveis 1-2 (tem ${broker.externalShiftCount})`
         });
       }
       continue;
