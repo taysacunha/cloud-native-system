@@ -1824,7 +1824,7 @@ function rebalanceDistributionViaSwaps(
 
   let swapsAttempted = 0;
   let swapsSuccessful = 0;
-  const MAX_REBALANCE_SWAPS = 20;
+  const MAX_REBALANCE_SWAPS = 40;
 
   for (let iteration = 0; iteration < MAX_REBALANCE_SWAPS; iteration++) {
     // Cálculo dinâmico de max/min entre corretores com locais externos
@@ -1851,10 +1851,12 @@ function rebalanceDistributionViaSwaps(
 
     let swappedThisIteration = false;
 
+    // ═══════════════════════════════════════════════════════════
+    // TENTATIVA 1: SWAP DIRETO (over → under)
+    // ═══════════════════════════════════════════════════════════
     for (const overBroker of overBrokers) {
       if (swappedThisIteration) break;
 
-      // Encontrar alocações externas deste broker
       const overAllocations = context.assignments.filter(a =>
         a.broker_id === overBroker.brokerId &&
         !internalLocIds.has(a.location_id)
@@ -1863,7 +1865,6 @@ function rebalanceDistributionViaSwaps(
       for (const allocation of overAllocations) {
         if (swappedThisIteration) break;
 
-        // Encontrar a demanda correspondente
         const demandForAlloc = possibleDemands.find(d =>
           d.locationId === allocation.location_id &&
           d.dateStr === allocation.assignment_date &&
@@ -1872,12 +1873,9 @@ function rebalanceDistributionViaSwaps(
         if (!demandForAlloc) continue;
 
         for (const underBroker of underBrokers) {
-          if (underBroker.externalShiftCount > minCount) continue; // Já saiu do "under"
-
-          // Verificar elegibilidade
+          if (underBroker.externalShiftCount > minCount) continue;
           if (!demandForAlloc.eligibleBrokerIds.includes(underBroker.brokerId)) continue;
 
-          // Verificar regras invioláveis
           // Temporariamente remover a alocação do over para verificar regras do under
           const allocIndex = context.assignments.indexOf(allocation);
           context.assignments.splice(allocIndex, 1);
@@ -1888,19 +1886,15 @@ function rebalanceDistributionViaSwaps(
 
           if (check.allowed) {
             swapsAttempted++;
-            // EXECUTAR SWAP
             allocation.broker_id = underBroker.brokerId;
             context.assignments.push(allocation);
-
             underBroker.externalShiftCount++;
 
-            // Atualizar dailyExternalAssignments
             if (!context.dailyExternalAssignments.has(allocation.assignment_date)) {
               context.dailyExternalAssignments.set(allocation.assignment_date, new Set());
             }
             context.dailyExternalAssignments.get(allocation.assignment_date)!.add(underBroker.brokerId);
 
-            // Atualizar weekend trackers
             const dayOfWeek = getDay(new Date(allocation.assignment_date + "T00:00:00"));
             if (dayOfWeek === 6) {
               context.saturdayExternalWorkers.delete(overBroker.brokerId);
@@ -1916,7 +1910,7 @@ function rebalanceDistributionViaSwaps(
               reason: `REBALANCEAMENTO: ${overBroker.brokerName}(${overBroker.externalShiftCount + 1}→${overBroker.externalShiftCount}) → ${underBroker.brokerName}(${underBroker.externalShiftCount - 1}→${underBroker.externalShiftCount})`
             });
 
-            console.log(`   ✅ SWAP: ${demandForAlloc.locationName} ${demandForAlloc.dateStr} ${demandForAlloc.shift}`);
+            console.log(`   ✅ SWAP DIRETO: ${demandForAlloc.locationName} ${demandForAlloc.dateStr} ${demandForAlloc.shift}`);
             console.log(`      ${overBroker.brokerName} (${overBroker.externalShiftCount + 1}→${overBroker.externalShiftCount}) → ${underBroker.brokerName} (${underBroker.externalShiftCount - 1}→${underBroker.externalShiftCount})`);
             break;
           } else {
@@ -1932,8 +1926,154 @@ function rebalanceDistributionViaSwaps(
       }
     }
 
+    // ═══════════════════════════════════════════════════════════
+    // TENTATIVA 2: CHAIN SWAP DE 2 HOPS (over → mid → under)
+    // Quando swap direto falha, tentar cadeia: mover alocação do over
+    // para um intermediário, e mover uma alocação do intermediário para o under
+    // ═══════════════════════════════════════════════════════════
     if (!swappedThisIteration) {
-      console.log(`   ⚠️ Nenhum swap possível nesta iteração — parando`);
+      for (const overBroker of overBrokers) {
+        if (swappedThisIteration) break;
+
+        const overAllocations = context.assignments.filter(a =>
+          a.broker_id === overBroker.brokerId &&
+          !internalLocIds.has(a.location_id)
+        );
+
+        for (const overAlloc of overAllocations) {
+          if (swappedThisIteration) break;
+
+          const overDemand = possibleDemands.find(d =>
+            d.locationId === overAlloc.location_id &&
+            d.dateStr === overAlloc.assignment_date &&
+            d.shift === overAlloc.shift_type
+          );
+          if (!overDemand) continue;
+
+          // Encontrar intermediários que possam receber a alocação do over
+          const midCandidates = context.brokerQueue.filter(mid => {
+            if (mid.brokerId === overBroker.brokerId) return false;
+            if (mid.externalShiftCount >= maxCount) return false; // Não empurrar para quem já está no topo
+            if (!overDemand.eligibleBrokerIds.includes(mid.brokerId)) return false;
+            return true;
+          });
+
+          for (const midBroker of midCandidates) {
+            if (swappedThisIteration) break;
+
+            // Verificar se mid pode receber a alocação do over
+            const overAllocIdx = context.assignments.indexOf(overAlloc);
+            context.assignments.splice(overAllocIdx, 1);
+            context.dailyExternalAssignments.get(overAlloc.assignment_date)?.delete(overBroker.brokerId);
+            overBroker.externalShiftCount--;
+
+            const midCheck = checkTrulyInviolableRules(midBroker, overDemand, context);
+            if (!midCheck.allowed) {
+              // Reverter
+              context.assignments.push(overAlloc);
+              overBroker.externalShiftCount++;
+              if (!context.dailyExternalAssignments.has(overAlloc.assignment_date)) {
+                context.dailyExternalAssignments.set(overAlloc.assignment_date, new Set());
+              }
+              context.dailyExternalAssignments.get(overAlloc.assignment_date)!.add(overBroker.brokerId);
+              continue;
+            }
+
+            // Mid pode receber. Agora, verificar se mid tem uma alocação que pode ir para under
+            // Primeiro, dar a alocação do over para mid temporariamente
+            overAlloc.broker_id = midBroker.brokerId;
+            context.assignments.push(overAlloc);
+            midBroker.externalShiftCount++;
+            if (!context.dailyExternalAssignments.has(overAlloc.assignment_date)) {
+              context.dailyExternalAssignments.set(overAlloc.assignment_date, new Set());
+            }
+            context.dailyExternalAssignments.get(overAlloc.assignment_date)!.add(midBroker.brokerId);
+
+            // Encontrar alocação do mid que possa ir para under
+            const midAllocations = context.assignments.filter(a =>
+              a.broker_id === midBroker.brokerId &&
+              !internalLocIds.has(a.location_id) &&
+              a !== overAlloc // Não a que acabamos de dar
+            );
+
+            let hop2Done = false;
+            for (const midAlloc of midAllocations) {
+              const midDemand = possibleDemands.find(d =>
+                d.locationId === midAlloc.location_id &&
+                d.dateStr === midAlloc.assignment_date &&
+                d.shift === midAlloc.shift_type
+              );
+              if (!midDemand) continue;
+
+              for (const underBroker of underBrokers) {
+                if (underBroker.externalShiftCount > minCount) continue;
+                if (!midDemand.eligibleBrokerIds.includes(underBroker.brokerId)) continue;
+
+                // Remover alocação do mid temporariamente
+                const midAllocIdx = context.assignments.indexOf(midAlloc);
+                context.assignments.splice(midAllocIdx, 1);
+                context.dailyExternalAssignments.get(midAlloc.assignment_date)?.delete(midBroker.brokerId);
+                midBroker.externalShiftCount--;
+
+                const underCheck = checkTrulyInviolableRules(underBroker, midDemand, context);
+                if (underCheck.allowed) {
+                  // SUCESSO! 2-hop chain swap
+                  swapsAttempted += 2;
+                  midAlloc.broker_id = underBroker.brokerId;
+                  context.assignments.push(midAlloc);
+                  underBroker.externalShiftCount++;
+                  if (!context.dailyExternalAssignments.has(midAlloc.assignment_date)) {
+                    context.dailyExternalAssignments.set(midAlloc.assignment_date, new Set());
+                  }
+                  context.dailyExternalAssignments.get(midAlloc.assignment_date)!.add(underBroker.brokerId);
+
+                  swapsSuccessful += 2;
+                  swappedThisIteration = true;
+                  hop2Done = true;
+
+                  relaxedAllocations.push({
+                    demand: `2-HOP CHAIN`,
+                    pass: 9,
+                    reason: `${overBroker.brokerName}(${overBroker.externalShiftCount + 1}→${overBroker.externalShiftCount}) →[${midBroker.brokerName}]→ ${underBroker.brokerName}(${underBroker.externalShiftCount - 1}→${underBroker.externalShiftCount})`
+                  });
+
+                  console.log(`   ✅ 2-HOP CHAIN: ${overBroker.brokerName}(${overBroker.externalShiftCount + 1}→${overBroker.externalShiftCount}) → ${midBroker.brokerName} → ${underBroker.brokerName}(${underBroker.externalShiftCount - 1}→${underBroker.externalShiftCount})`);
+                  break;
+                } else {
+                  // Reverter mid allocation
+                  context.assignments.push(midAlloc);
+                  midBroker.externalShiftCount++;
+                  if (!context.dailyExternalAssignments.has(midAlloc.assignment_date)) {
+                    context.dailyExternalAssignments.set(midAlloc.assignment_date, new Set());
+                  }
+                  context.dailyExternalAssignments.get(midAlloc.assignment_date)!.add(midBroker.brokerId);
+                }
+              }
+              if (hop2Done) break;
+            }
+
+            if (!hop2Done) {
+              // Reverter tudo: devolver alocação do over
+              const revertIdx = context.assignments.indexOf(overAlloc);
+              if (revertIdx !== -1) context.assignments.splice(revertIdx, 1);
+              context.dailyExternalAssignments.get(overAlloc.assignment_date)?.delete(midBroker.brokerId);
+              midBroker.externalShiftCount--;
+
+              overAlloc.broker_id = overBroker.brokerId;
+              context.assignments.push(overAlloc);
+              overBroker.externalShiftCount++;
+              if (!context.dailyExternalAssignments.has(overAlloc.assignment_date)) {
+                context.dailyExternalAssignments.set(overAlloc.assignment_date, new Set());
+              }
+              context.dailyExternalAssignments.get(overAlloc.assignment_date)!.add(overBroker.brokerId);
+            }
+          }
+        }
+      }
+    }
+
+    if (!swappedThisIteration) {
+      console.log(`   ⚠️ Nenhum swap possível nesta iteração (direto ou 2-hop) — parando`);
       break;
     }
   }
@@ -1943,10 +2083,11 @@ function rebalanceDistributionViaSwaps(
     with0: context.brokerQueue.filter(b => b.externalShiftCount === 0 && b.externalLocationCount > 0).length,
     with1: context.brokerQueue.filter(b => b.externalShiftCount === 1 && b.externalLocationCount > 0).length,
     with2: context.brokerQueue.filter(b => b.externalShiftCount === 2 && b.externalLocationCount > 0).length,
-    with3plus: context.brokerQueue.filter(b => b.externalShiftCount >= 3 && b.externalLocationCount > 0).length,
+    with3: context.brokerQueue.filter(b => b.externalShiftCount === 3 && b.externalLocationCount > 0).length,
+    with4plus: context.brokerQueue.filter(b => b.externalShiftCount >= 4 && b.externalLocationCount > 0).length,
   };
   console.log(`\n   📊 DISTRIBUIÇÃO APÓS REBALANCEAMENTO OBRIGATÓRIO:`);
-  console.log(`      0 externos: ${dist.with0} | 1 externo: ${dist.with1} | 2 externos: ${dist.with2} | 3+: ${dist.with3plus}`);
+  console.log(`      0 externos: ${dist.with0} | 1 externo: ${dist.with1} | 2 externos: ${dist.with2} | 3: ${dist.with3} | 4+: ${dist.with4plus}`);
   console.log(`   📊 Resultado: ${swapsSuccessful}/${swapsAttempted} swaps`);
 
   return { swapsAttempted, swapsSuccessful };
