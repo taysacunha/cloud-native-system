@@ -1997,31 +1997,22 @@ function findBrokerForDemand(
       continue;
     }
 
-    // Proteção de sábado interno (para sábados externos)
-    if (isSaturday && context.saturdayInternalWorkers?.has(broker.brokerId)) {
+    // Proteção de sábado interno (para sábados externos) — APENAS passes 1-3
+    // A partir do pass 4, permite sábado externo para garantir cobertura (externos acima de tudo)
+    if (isSaturday && context.saturdayInternalWorkers?.has(broker.brokerId) && pass <= 3) {
       if (collectBlockedBrokers) {
         blockedBrokers.push({
           brokerId: broker.brokerId,
           brokerName: broker.brokerName,
           rule: "REGRA: Reservado Tambaú",
-          reason: `Reservado para Tambaú sábado interno`
+          reason: `Reservado para Tambaú sábado interno (pass ${pass} <= 3)`
         });
       }
       continue;
     }
     
-    // NOVA PROTEÇÃO: Bloquear corretores de sábado interno em demandas de DOMINGO
-    if (isSunday && context.saturdayInternalWorkers?.has(broker.brokerId)) {
-      if (collectBlockedBrokers) {
-        blockedBrokers.push({
-          brokerId: broker.brokerId,
-          brokerName: broker.brokerName,
-          rule: "REGRA 9: Sáb/Dom",
-          reason: `Reservado para sábado interno - não pode trabalhar domingo`
-        });
-      }
-      continue;
-    }
+    // REMOVIDO: Bloqueio fantasma de domingo por pré-reserva de sábado interno
+    // O bloqueio real ocorre naturalmente via hasWeekendConflict após ETAPA 8.9
 
     // ═══════════════════════════════════════════════════════════
     // REGRA: CORRETORES COM SÁBADO EXTERNO = MÁXIMO 2 EXTERNOS NA SEMANA
