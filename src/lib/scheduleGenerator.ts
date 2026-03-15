@@ -1659,7 +1659,7 @@ function chainSwapForUnallocated(
             const altCheck = checkTrulyInviolableRules(alt, conflictDemand, context);
             if (!altCheck.allowed) return false;
 
-            // Verificar que o alternativo não ficaria com mais de 3 externos
+            // Verificar que o alternativo não ficaria acima do hard cap
             if (alt.externalShiftCount >= MAX_EXTERNAL_SHIFTS_HARD_CAP) return false;
 
             // Verificar que o alternativo não criaria novo conflito de fim de semana
