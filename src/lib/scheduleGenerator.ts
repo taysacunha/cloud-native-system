@@ -2880,8 +2880,14 @@ async function generateWeeklyScheduleWithAccumulator(
       target = 1;
     }
     
-    // Corretores de sábado agora podem ter até 2 externos (mesmo target dos demais)
-    // Não reduzir target por trabalhar sábado
+    // Corretores de sábado INTERNO recebem target MAIOR para compensar
+    // a indisponibilidade no sáb/dom externo
+    if (saturdayInternalWorkers.has(broker.id)) {
+      // Se target normal seria 2, dar 3 para compensar
+      // Se target normal seria 1 (alternância), dar 2
+      target = Math.max(target + 1, 2);
+      console.log(`   🎯 TARGET COMPENSATÓRIO: ${broker.name} → target ${target} (sábado interno, compensa sem sáb/dom externo)`);
+    }
     
     externalShiftTargets.set(broker.id, target);
   }
