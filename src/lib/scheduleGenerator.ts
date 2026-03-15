@@ -1968,7 +1968,7 @@ function findBrokerForDemand(
     const reservation = context.mandatoryReservations.get(reservationKey);
     
     if (reservation && reservation.demandKey === demandKey) {
-      const absoluteCheck = checkAbsoluteRules(broker, demand, context);
+      const absoluteCheck = checkAbsoluteRules(broker, demand, context, pass);
       if (absoluteCheck.allowed) {
         console.log(`   🎯 RESERVA USADA: ${broker.brokerName} para ${demand.locationName}`);
         return { broker, reason: `RESERVADO: ${reservation.reason}` };
