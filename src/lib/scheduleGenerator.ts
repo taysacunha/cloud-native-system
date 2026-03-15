@@ -4502,9 +4502,8 @@ async function generateWeeklyScheduleWithAccumulator(
   console.log(`\n   📊 Total de alocações após internos seg-sex: ${assignments.length}`);
 
   // ═══════════════════════════════════════════════════════════
-  // ETAPA 8.11: PASSE FINAL CONSERVADOR - GARANTIR ALOCAÇÃO DE TODOS OS EXTERNOS
-  // Relaxa regras progressivamente para demandas externas não alocadas
-  // Ordem: 1) interno+externo seg-sex, 2) consecutivos, 3) gate 2-antes-3
+  // ETAPA 8.11: PASSE FINAL COM GATE DE NÍVEL UNIFICADO (1→2→3→4)
+  // Relaxa consecutivos mas RESPEITA a escada de distribuição
   // NUNCA relaxa: disponibilidade dia/turno, vínculo ao local, hard cap
   // ═══════════════════════════════════════════════════════════
   const preEmergencyUnallocated = possibleDemands.filter(d => 
@@ -4512,45 +4511,74 @@ async function generateWeeklyScheduleWithAccumulator(
   );
 
   if (preEmergencyUnallocated.length > 0) {
-    console.log(`\n🚑 ETAPA 8.11: PASSE FINAL CONSERVADOR - ${preEmergencyUnallocated.length} demandas externas ainda pendentes`);
+    console.log(`\n🚑 ETAPA 8.11: PASSE FINAL COM GATE DE NÍVEL - ${preEmergencyUnallocated.length} demandas externas ainda pendentes`);
     
-    for (const demand of preEmergencyUnallocated) {
-      const demandKey = `${demand.locationId}-${demand.dateStr}-${demand.shift}`;
-      if (allocatedDemands.has(demandKey)) continue;
+    for (let finalLevel = 1; finalLevel <= 4; finalLevel++) {
+      const pendingNow = preEmergencyUnallocated.filter(d => 
+        !allocatedDemands.has(`${d.locationId}-${d.dateStr}-${d.shift}`)
+      );
+      if (pendingNow.length === 0) break;
       
-      // Coletar corretores elegíveis (já configurados no local via eligibleBrokerIds)
-      const eligibleBrokers = context.brokerQueue.filter(b => {
-        if (!demand.eligibleBrokerIds.includes(b.brokerId)) return false;
-        if (!b.availableWeekdays.includes(demand.dayOfWeek)) return false;
-        // Hard cap nunca relaxado
-        if (b.externalShiftCount >= MAX_EXTERNAL_SHIFTS_HARD_CAP) return false;
-        return true;
-      });
+      console.log(`\n   🎯 ETAPA 8.11 NÍVEL ${finalLevel}: ${pendingNow.length} demandas pendentes`);
       
-      // Ordenar por menos externos (distribuição justa)
-      eligibleBrokers.sort((a, b) => a.externalShiftCount - b.externalShiftCount);
-      
-      let allocated = false;
-      for (const broker of eligibleBrokers) {
-        // Verificar apenas regras invioláveis (construtora, etc.) mas relaxar consecutivos e gate
-        const checkResult = checkTrulyInviolableRulesWithRelaxation(broker, demand, context, true);
-        if (checkResult.allowed) {
-          allocateDemand(demand, broker, context);
-          allocatedDemands.add(demandKey);
-          relaxedAllocations.push({
-            demand: `${demand.locationName} ${demand.dateStr} ${demand.shift}`,
-            pass: 10,
-            reason: `PASSE FINAL: ${broker.brokerName} (regras de consecutivos/gate relaxadas)`
+      // GATE para níveis 3+
+      if (finalLevel >= 3) {
+        const externalEligible = context.brokerQueue.filter(b => {
+          if (b.externalLocationCount <= 0) return false;
+          return pendingNow.some(d => {
+            if (!d.eligibleBrokerIds.includes(b.brokerId)) return false;
+            const check = checkTrulyInviolableRules(b, d, context);
+            return check.allowed;
           });
-          console.log(`   🚑 ${demand.locationName} ${demand.dateStr} ${demand.shift} → ${broker.brokerName} (passe final)`);
-          allocated = true;
-          break;
+        });
+        
+        if (externalEligible.length > 0) {
+          const globalMin = Math.min(...externalEligible.map(b => b.externalShiftCount));
+          if (globalMin < finalLevel - 1) {
+            console.log(`   🚫 ETAPA 8.11 GATE NÍVEL ${finalLevel}: globalMin=${globalMin} < ${finalLevel - 1} — pulando`);
+            continue;
+          }
+          console.log(`   ✅ ETAPA 8.11 GATE NÍVEL ${finalLevel} OK: globalMin=${globalMin}`);
         }
       }
       
-      if (!allocated) {
-        console.log(`   ❌ ${demand.locationName} ${demand.dateStr} ${demand.shift}: IMPOSSÍVEL alocar mesmo com relaxamento`);
+      for (const demand of pendingNow) {
+        const demandKey = `${demand.locationId}-${demand.dateStr}-${demand.shift}`;
+        if (allocatedDemands.has(demandKey)) continue;
+        
+        const eligibleBrokers = context.brokerQueue.filter(b => {
+          if (!demand.eligibleBrokerIds.includes(b.brokerId)) return false;
+          if (!b.availableWeekdays.includes(demand.dayOfWeek)) return false;
+          if (b.externalShiftCount >= finalLevel) return false;
+          if (b.externalShiftCount >= MAX_EXTERNAL_SHIFTS_HARD_CAP) return false;
+          return true;
+        });
+        
+        eligibleBrokers.sort((a, b) => a.externalShiftCount - b.externalShiftCount);
+        
+        for (const broker of eligibleBrokers) {
+          const checkResult = checkTrulyInviolableRulesWithRelaxation(broker, demand, context, true);
+          if (checkResult.allowed) {
+            allocateDemand(demand, broker, context);
+            allocatedDemands.add(demandKey);
+            relaxedAllocations.push({
+              demand: `${demand.locationName} ${demand.dateStr} ${demand.shift}`,
+              pass: 10,
+              reason: `PASSE FINAL NÍVEL ${finalLevel}: ${broker.brokerName} (${broker.externalShiftCount} externos)`
+            });
+            console.log(`   🚑 ${demand.locationName} ${demand.dateStr} ${demand.shift} → ${broker.brokerName} (nível ${finalLevel}, ${broker.externalShiftCount} externos)`);
+            break;
+          }
+        }
       }
+    }
+    
+    // Verificar se ainda há pendentes
+    const stillPending = preEmergencyUnallocated.filter(d => 
+      !allocatedDemands.has(`${d.locationId}-${d.dateStr}-${d.shift}`)
+    );
+    for (const demand of stillPending) {
+      console.log(`   ❌ ${demand.locationName} ${demand.dateStr} ${demand.shift}: IMPOSSÍVEL alocar mesmo com relaxamento`);
     }
   }
 
