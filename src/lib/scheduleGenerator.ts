@@ -2762,7 +2762,7 @@ export async function generateWeeklyScheduleWithRetry(
       
       const criticalViolations = validation.violations.filter(v => v.severity === 'critical');
       
-      // Verificar violações verdadeiramente invioláveis (4, 6, 9)
+      // Verificar violações verdadeiramente invioláveis (4, 6, 9, ESCADA)
       const hasInviolableViolations = criticalViolations.some(v => 
         v.rule.includes("REGRA 4") || 
         v.rule.includes("locais externos diferentes") ||
@@ -2772,7 +2772,8 @@ export async function generateWeeklyScheduleWithRetry(
         v.rule.includes("sábado E domingo") ||
         v.rule.includes("sábado e domingo") ||
         v.rule.includes("sábado OU domingo") ||
-        v.rule.includes("Sáb ou Dom")
+        v.rule.includes("Sáb ou Dom") ||
+        v.rule.includes("ESCADA DE DISTRIBUIÇÃO")
       );
       
       if (hasInviolableViolations) {
