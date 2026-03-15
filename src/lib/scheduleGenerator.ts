@@ -1057,16 +1057,9 @@ function checkAbsoluteRules(
     }
   }
 
-  // REGRA ABSOLUTA 8: Dias consecutivos
-  const prevDay = format(subDays(demand.date, 1), "yyyy-MM-dd");
-  const nextDay = format(addDays(demand.date, 1), "yyyy-MM-dd");
-
-  if (context.dailyExternalAssignments.get(prevDay)?.has(broker.brokerId)) {
-    return { allowed: false, reason: "Externo ontem", rule: "REGRA 8: Dias consecutivos" };
-  }
-  if (context.dailyExternalAssignments.get(nextDay)?.has(broker.brokerId)) {
-    return { allowed: false, reason: "Externo amanhã", rule: "REGRA 8: Dias consecutivos" };
-  }
+  // REGRA 8 (Dias consecutivos) REMOVIDA daqui — agora tratada via 
+  // checkTrulyInviolableRulesWithRelaxation no findBrokerForDemand,
+  // permitindo relaxamento para corretores com <2 externos.
 
   // ═══════════════════════════════════════════════════════════
   // REGRA ABSOLUTA 9 CORRIGIDA: Sábado OU Domingo (QUALQUER plantão)
