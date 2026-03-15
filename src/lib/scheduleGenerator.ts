@@ -2777,9 +2777,9 @@ export async function generateWeeklyScheduleWithRetry(
       );
       
       if (hasInviolableViolations) {
-        console.log(`❌ Tentativa ${attempt}: violações INVIOLÁVEIS detectadas (Regra 4, 6 ou 9)`);
+        console.log(`❌ Tentativa ${attempt}: violações INVIOLÁVEIS detectadas`);
         for (const v of criticalViolations.filter(v => 
-          v.rule.includes("REGRA 4") || v.rule.includes("REGRA 6") || v.rule.includes("REGRA 9") || v.rule.includes("Sáb ou Dom")
+          v.rule.includes("REGRA 4") || v.rule.includes("REGRA 6") || v.rule.includes("REGRA 9") || v.rule.includes("Sáb ou Dom") || v.rule.includes("ESCADA")
         )) {
           console.log(`   ⛔ ${v.rule}: ${v.brokerName} - ${v.details}`);
         }
