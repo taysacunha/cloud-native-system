@@ -2915,6 +2915,23 @@ async function generateWeeklyScheduleWithAccumulator(
 
   const externalShiftTargets = new Map<string, number>();
   
+  // Detectar quem trabalhou sábado na SEMANA ANTERIOR (via previousWeekStats)
+  const workedSaturdayLastWeekSet = new Set<string>();
+  for (const broker of allBrokers) {
+    const prevWeekStats = accumulator.previousWeekStats.find(s => s.broker_id === broker.id);
+    if (prevWeekStats && (prevWeekStats.saturday_count || 0) > 0) {
+      workedSaturdayLastWeekSet.add(broker.id);
+    }
+  }
+  
+  if (workedSaturdayLastWeekSet.size > 0) {
+    console.log(`\n📋 CORRETORES QUE TRABALHARAM SÁBADO NA SEMANA PASSADA:`);
+    for (const bId of workedSaturdayLastWeekSet) {
+      const bName = allBrokers.find(b => b.id === bId)?.name || bId;
+      console.log(`   🗓️ ${bName}`);
+    }
+  }
+  
   for (const broker of allBrokers) {
     const prevWeekStats = accumulator.previousWeekStats.find(s => s.broker_id === broker.id);
     
@@ -2924,20 +2941,27 @@ async function generateWeeklyScheduleWithAccumulator(
       target = 1;
     }
     
-    // Corretores de sábado INTERNO recebem target MAIOR para compensar
-    // a indisponibilidade no sáb/dom externo
+    // COMPENSAÇÃO DINÂMICA: Corretores que trabalharam sábado na semana passada
+    // Eles não puderam pegar sáb/dom externo → compensar com mais externos seg-sex
+    // Target base = 2 (ou o calculado), será elevado a 3 SOMENTE se houver demanda pendente
+    // (a elevação dinâmica acontece na Etapa 9 quando há demandas não alocadas)
+    if (workedSaturdayLastWeekSet.has(broker.id)) {
+      // Garantir mínimo de 2 (não reduz para 1 por alternância)
+      target = Math.max(target, 2);
+      console.log(`   🎯 TARGET COMPENSATÓRIO: ${broker.name} → target ${target} (trabalhou sábado semana passada)`);
+    }
+    
+    // Corretores de sábado INTERNO desta semana também têm compensação
     if (saturdayInternalWorkers.has(broker.id)) {
-      // Se target normal seria 2, dar 3 para compensar
-      // Se target normal seria 1 (alternância), dar 2
-      target = Math.max(target + 1, 2);
-      console.log(`   🎯 TARGET COMPENSATÓRIO: ${broker.name} → target ${target} (sábado interno, compensa sem sáb/dom externo)`);
+      target = Math.max(target, 2);
+      console.log(`   🎯 TARGET COMPENSATÓRIO: ${broker.name} → target ${target} (sábado interno esta semana)`);
     }
     
     externalShiftTargets.set(broker.id, target);
   }
 
   const brokerQueue: BrokerQueueItem[] = allBrokers.map((broker) => {
-    const prevWeekStats = accumulator.previousWeekStats.find(s => s.broker_id === broker.id);
+    const prevWeekStats = accumulator.previousWeekStats.find(s => s.broker_id => broker.id);
     const target = externalShiftTargets.get(broker.id) || 2;
     
     return {
@@ -2952,6 +2976,7 @@ async function generateWeeklyScheduleWithAccumulator(
       externalLocationCount: 0,
       externalCredit: target,
       targetExternals: target,
+      workedSaturdayLastWeek: workedSaturdayLastWeekSet.has(broker.id),
     };
   });
 
