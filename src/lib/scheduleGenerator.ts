@@ -1573,8 +1573,8 @@ function deConsecutivizeExternals(
         if (b.brokerId === pair.brokerId) return false;
         if (!demand.eligibleBrokerIds.includes(b.brokerId)) return false;
         
-        // Verificar regras invioláveis
-        const check = checkTrulyInviolableRules(b, demand, context);
+        // Verificar regras invioláveis (modo estrito — swap não deve criar consecutivos)
+        const check = checkTrulyInviolableRulesWithRelaxation(b, demand, context, false);
         if (!check.allowed) return false;
         
         // Verificar se NÃO criaria novo par consecutivo para este corretor
