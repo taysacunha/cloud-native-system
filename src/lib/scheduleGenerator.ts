@@ -1982,36 +1982,36 @@ function findBrokerForDemand(
     }
 
     // ═══════════════════════════════════════════════════════════
-    // NOVA REGRA: CORRETORES COM SÁBADO = MÁXIMO 1 EXTERNO NA SEMANA
+    // REGRA: CORRETORES COM SÁBADO = MÁXIMO 2 EXTERNOS NA SEMANA
     // Aplica-se a quem trabalha sábado interno OU sábado externo
     // ═══════════════════════════════════════════════════════════
     const worksSaturdayInternal = context.saturdayInternalWorkers?.has(broker.brokerId);
     const worksSaturdayExternal = context.saturdayExternalWorkers?.has(broker.brokerId);
     const worksSaturday = worksSaturdayInternal || worksSaturdayExternal;
     
-    if (worksSaturday && broker.externalShiftCount >= 1 && !isSaturday) {
+    if (worksSaturday && broker.externalShiftCount >= 2 && !isSaturday) {
       if (collectBlockedBrokers) {
         blockedBrokers.push({
           brokerId: broker.brokerId,
           brokerName: broker.brokerName,
-          rule: "REGRA: Sábado + 1 externo máx",
-          reason: `Trabalha sábado - limite de 1 externo atingido (tem ${broker.externalShiftCount})`
+          rule: "REGRA: Sábado + 2 externos máx",
+          reason: `Trabalha sábado - limite de 2 externos atingido (tem ${broker.externalShiftCount})`
         });
       }
       continue;
     }
     
     // ═══════════════════════════════════════════════════════════
-    // NOVA REGRA: EVITAR SEXTA PARA QUEM TRABALHA SÁBADO
-    // Evita dias consecutivos (sexta + sábado)
+    // PREFERÊNCIA: EVITAR SEXTA PARA QUEM TRABALHA SÁBADO
+    // Só bloqueia se já tem 1+ externo (preserva chance de quem tem 0)
     // ═══════════════════════════════════════════════════════════
-    if (worksSaturday && demand.dayOfWeek === "friday") {
+    if (worksSaturday && demand.dayOfWeek === "friday" && broker.externalShiftCount >= 1) {
       if (collectBlockedBrokers) {
         blockedBrokers.push({
           brokerId: broker.brokerId,
           brokerName: broker.brokerName,
           rule: "REGRA: Evitar sexta com sábado",
-          reason: `Trabalha sábado - evitar consecutivo (sexta)`
+          reason: `Trabalha sábado e já tem ${broker.externalShiftCount} externo(s) - evitar consecutivo (sexta)`
         });
       }
       continue;
