@@ -4148,8 +4148,61 @@ async function generateWeeklyScheduleWithAccumulator(
   }
 
   // ═══════════════════════════════════════════════════════════
+  // ETAPA 8.11: PASSE FINAL CONSERVADOR - GARANTIR ALOCAÇÃO DE TODOS OS EXTERNOS
+  // MOVIDO PARA ANTES DOS INTERNOS — externos SEMPRE têm prioridade
+  // Relaxa regras progressivamente para demandas externas não alocadas
+  // NUNCA relaxa: disponibilidade dia/turno, vínculo ao local, hard cap
+  // ═══════════════════════════════════════════════════════════
+  const preEmergencyUnallocated = possibleDemands.filter(d => 
+    !allocatedDemands.has(`${d.locationId}-${d.dateStr}-${d.shift}`)
+  );
+
+  if (preEmergencyUnallocated.length > 0) {
+    console.log(`\n🚑 ETAPA 8.11: PASSE FINAL CONSERVADOR - ${preEmergencyUnallocated.length} demandas externas ainda pendentes`);
+    
+    for (const demand of preEmergencyUnallocated) {
+      const demandKey = `${demand.locationId}-${demand.dateStr}-${demand.shift}`;
+      if (allocatedDemands.has(demandKey)) continue;
+      
+      // Coletar corretores elegíveis (já configurados no local via eligibleBrokerIds)
+      const eligibleBrokers = context.brokerQueue.filter(b => {
+        if (!demand.eligibleBrokerIds.includes(b.brokerId)) return false;
+        if (!b.availableWeekdays.includes(demand.dayOfWeek)) return false;
+        // Hard cap nunca relaxado
+        if (b.externalShiftCount >= MAX_EXTERNAL_SHIFTS_HARD_CAP) return false;
+        return true;
+      });
+      
+      // Ordenar por menos externos (distribuição justa)
+      eligibleBrokers.sort((a, b) => a.externalShiftCount - b.externalShiftCount);
+      
+      let allocated = false;
+      for (const broker of eligibleBrokers) {
+        // Verificar apenas regras invioláveis (construtora, etc.) mas relaxar consecutivos e gate
+        const checkResult = checkTrulyInviolableRulesWithRelaxation(broker, demand, context, true);
+        if (checkResult.allowed) {
+          allocateDemand(demand, broker, context);
+          allocatedDemands.add(demandKey);
+          relaxedAllocations.push({
+            demand: `${demand.locationName} ${demand.dateStr} ${demand.shift}`,
+            pass: 10,
+            reason: `PASSE FINAL: ${broker.brokerName} (regras de consecutivos/gate relaxadas)`
+          });
+          console.log(`   🚑 ${demand.locationName} ${demand.dateStr} ${demand.shift} → ${broker.brokerName} (passe final)`);
+          allocated = true;
+          break;
+        }
+      }
+      
+      if (!allocated) {
+        console.log(`   ❌ ${demand.locationName} ${demand.dateStr} ${demand.shift}: IMPOSSÍVEL alocar mesmo com relaxamento`);
+      }
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
   // ETAPA 8.10: ALOCAÇÃO DE PLANTÕES INTERNOS (SEGUNDA A SEXTA)
-  // EXECUTADA APÓS finalizar todos os externos para não interferir
+  // EXECUTADA APÓS finalizar TODOS os externos para não interferir
   // Regra: interno pode coexistir com externo no MESMO dia se em TURNOS diferentes
   // ═══════════════════════════════════════════════════════════
   console.log("\n🏢 ETAPA 8.10: ALOCANDO PLANTÕES INTERNOS DE SEGUNDA A SEXTA...");
@@ -4241,10 +4294,7 @@ async function generateWeeklyScheduleWithAccumulator(
           
           if (!broker) continue;
           
-          // TURNO MANHÃ - alocar se:
-          // 1) O dia tem manhã configurada
-          // 2) O corretor está disponível para manhã NESTE local (weekday_shift_availability)
-          // 3) Não existe alocação (interna ou externa) para este corretor neste dia/turno
+          // TURNO MANHÃ
           if (hasMorning) {
             const availableForMorning = isBrokerAvailableForInternalShift(locBroker, "morning", weekdayName);
             const hasConflictMorning = assignments.some(
@@ -4264,14 +4314,12 @@ async function generateWeeklyScheduleWithAccumulator(
               };
               assignments.push(morningAssignment);
               console.log(`   ✅ ${broker.brokerName} → ${locationName} ${weekdayName} MANHÃ`);
-            } else if (!availableForMorning) {
-              // Log silencioso - corretor não disponível para manhã neste vínculo
             } else if (hasConflictMorning) {
               console.log(`   ⏭️ ${broker.brokerName} ${weekdayName} manhã: já tem alocação neste turno`);
             }
           }
           
-          // TURNO TARDE - mesma lógica
+          // TURNO TARDE
           if (hasAfternoon) {
             const availableForAfternoon = isBrokerAvailableForInternalShift(locBroker, "afternoon", weekdayName);
             const hasConflictAfternoon = assignments.some(
@@ -4291,8 +4339,6 @@ async function generateWeeklyScheduleWithAccumulator(
               };
               assignments.push(afternoonAssignment);
               console.log(`   ✅ ${broker.brokerName} → ${locationName} ${weekdayName} TARDE`);
-            } else if (!availableForAfternoon) {
-              // Log silencioso - corretor não disponível para tarde neste vínculo
             } else if (hasConflictAfternoon) {
               console.log(`   ⏭️ ${broker.brokerName} ${weekdayName} tarde: já tem alocação neste turno`);
             }
@@ -4303,59 +4349,6 @@ async function generateWeeklyScheduleWithAccumulator(
   }
   
   console.log(`\n   📊 Total de alocações após internos seg-sex: ${assignments.length}`);
-
-  // ═══════════════════════════════════════════════════════════
-  // ETAPA 8.11: PASSE FINAL CONSERVADOR - GARANTIR ALOCAÇÃO DE TODOS OS EXTERNOS
-  // Relaxa regras progressivamente para demandas externas não alocadas
-  // Ordem: 1) interno+externo seg-sex, 2) consecutivos, 3) gate 2-antes-3
-  // NUNCA relaxa: disponibilidade dia/turno, vínculo ao local, hard cap
-  // ═══════════════════════════════════════════════════════════
-  const preEmergencyUnallocated = possibleDemands.filter(d => 
-    !allocatedDemands.has(`${d.locationId}-${d.dateStr}-${d.shift}`)
-  );
-
-  if (preEmergencyUnallocated.length > 0) {
-    console.log(`\n🚑 ETAPA 8.11: PASSE FINAL CONSERVADOR - ${preEmergencyUnallocated.length} demandas externas ainda pendentes`);
-    
-    for (const demand of preEmergencyUnallocated) {
-      const demandKey = `${demand.locationId}-${demand.dateStr}-${demand.shift}`;
-      if (allocatedDemands.has(demandKey)) continue;
-      
-      // Coletar corretores elegíveis (já configurados no local via eligibleBrokerIds)
-      const eligibleBrokers = context.brokerQueue.filter(b => {
-        if (!demand.eligibleBrokerIds.includes(b.brokerId)) return false;
-        if (!b.availableWeekdays.includes(demand.dayOfWeek)) return false;
-        // Hard cap nunca relaxado
-        if (b.externalShiftCount >= MAX_EXTERNAL_SHIFTS_HARD_CAP) return false;
-        return true;
-      });
-      
-      // Ordenar por menos externos (distribuição justa)
-      eligibleBrokers.sort((a, b) => a.externalShiftCount - b.externalShiftCount);
-      
-      let allocated = false;
-      for (const broker of eligibleBrokers) {
-        // Verificar apenas regras invioláveis (construtora, etc.) mas relaxar consecutivos e gate
-        const checkResult = checkTrulyInviolableRulesWithRelaxation(broker, demand, context, true);
-        if (checkResult.allowed) {
-          allocateDemand(demand, broker, context);
-          allocatedDemands.add(demandKey);
-          relaxedAllocations.push({
-            demand: `${demand.locationName} ${demand.dateStr} ${demand.shift}`,
-            pass: 10,
-            reason: `PASSE FINAL: ${broker.brokerName} (regras de consecutivos/gate relaxadas)`
-          });
-          console.log(`   🚑 ${demand.locationName} ${demand.dateStr} ${demand.shift} → ${broker.brokerName} (passe final)`);
-          allocated = true;
-          break;
-        }
-      }
-      
-      if (!allocated) {
-        console.log(`   ❌ ${demand.locationName} ${demand.dateStr} ${demand.shift}: IMPOSSÍVEL alocar mesmo com relaxamento`);
-      }
-    }
-  }
 
   // Relatório de qualidade
   const finalUnallocated = possibleDemands.filter(d => 
