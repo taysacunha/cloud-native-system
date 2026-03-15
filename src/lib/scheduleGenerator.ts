@@ -271,7 +271,7 @@ interface AllocationContext {
 }
 
 const MAX_EXTERNAL_SHIFTS_PER_WEEK = 2;
-const MAX_EXTERNAL_SHIFTS_HARD_CAP = 4; // Hard limit absoluto - só acessível via gate nível 4
+const MAX_EXTERNAL_SHIFTS_HARD_CAP = 3; // NUNCA pode exceder 3 - hard limit absoluto
 
 // ═══════════════════════════════════════════════════════════
 // FUNÇÃO AUXILIAR: VERIFICAR 3 DIAS EXTERNOS CONSECUTIVOS
@@ -860,8 +860,14 @@ function checkInviolableRules(
   demand: ExternalDemand,
   context: AllocationContext
 ): InviolableRulesCheck {
-  // REGRA 1 REMOVIDA DAQUI: O limite de externos é controlado pelo GATE DE NÍVEL.
-  // Hard cap verificado externamente.
+  // REGRA 1: Máximo 2 externos por semana (INVIOLÁVEL em condições normais)
+  if (broker.externalShiftCount >= MAX_EXTERNAL_SHIFTS_PER_WEEK) {
+    return { 
+      allowed: false, 
+      reason: `Já tem ${broker.externalShiftCount} externos (máx ${MAX_EXTERNAL_SHIFTS_PER_WEEK})`,
+      rule: "REGRA 1: Máx 2 externos/semana"
+    };
+  }
   
   // REGRA 5: Dois turnos no mesmo local externo - ABSOLUTA SEM EXCEÇÕES
   const hasOtherShiftSameLocalAbs = context.assignments.some(a =>
@@ -936,11 +942,10 @@ function checkAbsoluteRules(
   demand: ExternalDemand,
   context: AllocationContext
 ): { allowed: boolean; reason: string; rule: string } {
-  // REGRA 1 REMOVIDA DAQUI: O limite de externos agora é controlado EXCLUSIVAMENTE
-  // pelo GATE DE NÍVEL em findBrokerForDemand (maxAllowedExternals).
-  // Manter aqui causava duplo bloqueio que impedia os níveis 3/4 de funcionar.
-  // Hard cap (4) é verificado no gate de nível.
-
+  // REGRA ABSOLUTA 1: Máximo de 2 externos por semana
+  if (broker.externalShiftCount >= MAX_EXTERNAL_SHIFTS_PER_WEEK) {
+    return { allowed: false, reason: `Já tem ${broker.externalShiftCount} externos`, rule: "REGRA 1: Máx 2 externos/semana" };
+  }
 
   // REGRA ABSOLUTA 2: Deve estar na lista de elegíveis
   if (!demand.eligibleBrokerIds.includes(broker.brokerId)) {
@@ -1055,8 +1060,19 @@ function checkAbsoluteRules(
     };
   }
 
-  // REGRA 10 FLEXÍVEL: Sábado + máx 1 externo agora é preferência, não bloqueio absoluto
-  // Enforced condicionalmente em findBrokerForDemand (só nos níveis 1-2)
+  // REGRA ABSOLUTA 10: Se trabalha sábado (interno OU externo), máximo 1 externo na semana
+  const worksSaturdayInternal = context.saturdayInternalWorkers?.has(broker.brokerId);
+  const worksSaturdayExternal = context.saturdayExternalWorkers?.has(broker.brokerId);
+  
+  if (worksSaturdayInternal || worksSaturdayExternal) {
+    if (broker.externalShiftCount >= 1) {
+      return { 
+        allowed: false, 
+        reason: `Trabalha sábado ${worksSaturdayInternal ? 'interno' : 'externo'}, já tem ${broker.externalShiftCount} externo`, 
+        rule: "REGRA 10: Sábado + máx 1 externo" 
+      };
+    }
+  }
 
   return { allowed: true, reason: "OK", rule: "" };
 }
@@ -1516,568 +1532,9 @@ function allocateDemand(
 }
 
 // ═══════════════════════════════════════════════════════════
-// CHAIN SWAP: Tenta preencher demandas não alocadas via cadeia de trocas
-// Ex: Domingo Setai sem corretor → Leonardo elegível mas bloqueado por sábado
-// → Mover sábado de Leonardo para Daniela → Leonardo livre para domingo
+// ETAPA 8.8: DESCONSECUTIVAR EXTERNOS (OTIMIZAÇÃO)
+// Tenta quebrar pares de dias consecutivos trocando corretores
 // ═══════════════════════════════════════════════════════════
-function chainSwapForUnallocated(
-  context: AllocationContext,
-  possibleDemands: ExternalDemand[],
-  allocatedDemands: Set<string>,
-  internalLocIds: Set<string>,
-  relaxedAllocations: { demand: string; pass: number; reason: string }[]
-): { swapsAttempted: number; swapsSuccessful: number } {
-  console.log("\n🔗 ETAPA 8.8b: CHAIN SWAP PARA DEMANDAS NÃO ALOCADAS");
-  console.log("─────────────────────────────────────────────────────────────");
-
-  let swapsAttempted = 0;
-  let swapsSuccessful = 0;
-
-  const unallocated = possibleDemands.filter(d =>
-    !allocatedDemands.has(`${d.locationId}-${d.dateStr}-${d.shift}`)
-  );
-
-  if (unallocated.length === 0) {
-    console.log("   ✅ Nenhuma demanda não alocada — chain swap não necessário");
-    return { swapsAttempted: 0, swapsSuccessful: 0 };
-  }
-
-  console.log(`   📊 ${unallocated.length} demandas não alocadas para tentar chain swap`);
-
-  for (const demand of unallocated) {
-    const demandKey = `${demand.locationId}-${demand.dateStr}-${demand.shift}`;
-    if (allocatedDemands.has(demandKey)) continue;
-
-    console.log(`\n   🔍 Tentando chain swap para: ${demand.locationName} ${demand.dateStr} ${demand.shift}`);
-
-    // 1. Listar corretores elegíveis e o motivo do bloqueio
-    for (const eligibleId of demand.eligibleBrokerIds) {
-      const broker = context.brokerQueue.find(b => b.brokerId === eligibleId);
-      if (!broker) continue;
-
-      // Verificar se este corretor passaria nas regras invioláveis EXCETO Regra 9 (sáb/dom)
-      const check = checkTrulyInviolableRules(broker, demand, context);
-      if (check.allowed) {
-        // Corretor pode ser alocado diretamente — alocar!
-        allocateDemand(demand, broker, context);
-        allocatedDemands.add(demandKey);
-        console.log(`   ✅ Alocado diretamente: ${broker.brokerName} para ${demand.locationName}`);
-        swapsSuccessful++;
-        break;
-      }
-
-      // Verificar se o bloqueio é por Regra 9 (sábado/domingo)
-      if (check.rule === "REGRA9_SAB_DOM") {
-        swapsAttempted++;
-        console.log(`   🔗 ${broker.brokerName} bloqueado por Regra 9 — tentando chain swap...`);
-
-        // Encontrar a alocação de sábado que bloqueia este corretor
-        const isSunday = demand.dayOfWeek === "sunday";
-        const isSaturday = demand.dayOfWeek === "saturday";
-        const conflictDateStr = isSunday
-          ? format(subDays(demand.date, 1), "yyyy-MM-dd")
-          : isSaturday
-            ? format(addDays(demand.date, 1), "yyyy-MM-dd")
-            : null;
-
-        if (!conflictDateStr) continue;
-
-        // Encontrar as alocações do corretor no dia conflitante
-        const conflictingAssignments = context.assignments.filter(a =>
-          a.broker_id === broker.brokerId &&
-          a.assignment_date === conflictDateStr
-        );
-
-        if (conflictingAssignments.length === 0) {
-          // O bloqueio pode ser por saturdayInternalWorkers
-          if (context.saturdayInternalWorkers?.has(broker.brokerId)) {
-            console.log(`   ⚠️ ${broker.brokerName} reservado para sábado interno — tentando desreservar`);
-            
-            // Tentar encontrar substituto para sábado interno
-            const satInternalSub = findSaturdayInternalSubstitute(broker.brokerId, context, conflictDateStr);
-            if (satInternalSub) {
-              // Trocar: remover broker da reserva de sábado interno, substituir por outro
-              context.saturdayInternalWorkers.delete(broker.brokerId);
-              context.saturdayInternalWorkers.add(satInternalSub.brokerId);
-              
-              // Alocar a demanda original
-              allocateDemand(demand, broker, context);
-              allocatedDemands.add(demandKey);
-              swapsSuccessful++;
-              
-              relaxedAllocations.push({
-                demand: `${demand.locationName} ${demand.dateStr} ${demand.shift}`,
-                pass: 8,
-                reason: `CHAIN SWAP: ${broker.brokerName} liberado de sáb interno (substituído por ${satInternalSub.brokerName})`
-              });
-              console.log(`   ✅ CHAIN SWAP: ${broker.brokerName} liberado para ${demand.locationName} domingo`);
-              console.log(`      ${satInternalSub.brokerName} assume sábado interno`);
-              break;
-            }
-          }
-          continue;
-        }
-
-        // Tentar trocar CADA alocação conflitante para outro corretor
-        let chainSwapDone = false;
-        for (const conflictAssignment of conflictingAssignments) {
-          // Só tentar chain swap para alocações externas
-          if (internalLocIds.has(conflictAssignment.location_id)) continue;
-
-          // Encontrar a demanda original da alocação conflitante
-          const conflictDemand = possibleDemands.find(d =>
-            d.locationId === conflictAssignment.location_id &&
-            d.dateStr === conflictAssignment.assignment_date &&
-            d.shift === conflictAssignment.shift_type
-          );
-          if (!conflictDemand) continue;
-
-          console.log(`   🔄 Tentando mover ${conflictDemand.locationName} ${conflictDemand.dateStr} ${conflictDemand.shift} de ${broker.brokerName}...`);
-
-          // Encontrar corretor alternativo para a alocação conflitante
-          const alternativeBrokers = context.brokerQueue.filter(alt => {
-            if (alt.brokerId === broker.brokerId) return false;
-            if (!conflictDemand.eligibleBrokerIds.includes(alt.brokerId)) return false;
-
-            // Verificar regras invioláveis para o alternativo na demanda conflitante
-            const altCheck = checkTrulyInviolableRules(alt, conflictDemand, context);
-            if (!altCheck.allowed) return false;
-
-            // Verificar que o alternativo não ficaria acima do hard cap
-            if (alt.externalShiftCount >= MAX_EXTERNAL_SHIFTS_HARD_CAP) return false;
-
-            // Verificar que o alternativo não criaria novo conflito de fim de semana
-            // (se estiver trocando para sábado, o alternativo não deve ter domingo)
-            const altWeekendCheck = hasWeekendConflict(
-              alt.brokerId,
-              conflictDemand.date,
-              conflictDemand.dayOfWeek,
-              context.assignments,
-              context.saturdayInternalWorkers
-            );
-            if (altWeekendCheck.hasConflict) return false;
-
-            return true;
-          });
-
-          // Ordenar alternativos: menos externos primeiro, depois sem consecutivos
-          alternativeBrokers.sort((a, b) => {
-            if (a.externalShiftCount !== b.externalShiftCount) {
-              return a.externalShiftCount - b.externalShiftCount;
-            }
-            const pairsA = countConsecutivePairsIfAllocated(a.brokerId, conflictDemand.dateStr, context);
-            const pairsB = countConsecutivePairsIfAllocated(b.brokerId, conflictDemand.dateStr, context);
-            return pairsA - pairsB;
-          });
-
-          if (alternativeBrokers.length > 0) {
-            const altBroker = alternativeBrokers[0];
-            const oldBroker = broker;
-
-            // EXECUTAR SWAP da alocação conflitante
-            conflictAssignment.broker_id = altBroker.brokerId;
-
-            // Atualizar contadores
-            oldBroker.externalShiftCount--;
-            altBroker.externalShiftCount++;
-
-            // Atualizar dailyExternalAssignments
-            context.dailyExternalAssignments.get(conflictDemand.dateStr)?.delete(oldBroker.brokerId);
-            if (!context.dailyExternalAssignments.has(conflictDemand.dateStr)) {
-              context.dailyExternalAssignments.set(conflictDemand.dateStr, new Set());
-            }
-            context.dailyExternalAssignments.get(conflictDemand.dateStr)!.add(altBroker.brokerId);
-
-            // Atualizar weekendExternalAssignments
-            if (conflictDemand.dayOfWeek === "saturday") {
-              context.saturdayExternalWorkers.delete(oldBroker.brokerId);
-              context.saturdayExternalWorkers.add(altBroker.brokerId);
-            }
-
-            // Agora alocar a demanda original para o broker liberado
-            // Re-verificar regras (agora sem o conflito de sábado)
-            const recheckDemand = checkTrulyInviolableRules(oldBroker, demand, context);
-            if (recheckDemand.allowed) {
-              allocateDemand(demand, oldBroker, context);
-              allocatedDemands.add(demandKey);
-              swapsSuccessful++;
-
-              relaxedAllocations.push({
-                demand: `${demand.locationName} ${demand.dateStr} ${demand.shift}`,
-                pass: 8,
-                reason: `CHAIN SWAP: ${oldBroker.brokerName} liberado (${conflictDemand.locationName} sáb → ${altBroker.brokerName})`
-              });
-              console.log(`   ✅ CHAIN SWAP SUCESSO:`);
-              console.log(`      ${conflictDemand.locationName} ${conflictDemand.dateStr} ${conflictDemand.shift}: ${oldBroker.brokerName} → ${altBroker.brokerName}`);
-              console.log(`      ${demand.locationName} ${demand.dateStr} ${demand.shift}: → ${oldBroker.brokerName}`);
-              chainSwapDone = true;
-              break;
-            } else {
-              // Reverter swap
-              conflictAssignment.broker_id = oldBroker.brokerId;
-              oldBroker.externalShiftCount++;
-              altBroker.externalShiftCount--;
-              context.dailyExternalAssignments.get(conflictDemand.dateStr)?.delete(altBroker.brokerId);
-              context.dailyExternalAssignments.get(conflictDemand.dateStr)?.add(oldBroker.brokerId);
-              if (conflictDemand.dayOfWeek === "saturday") {
-                context.saturdayExternalWorkers.add(oldBroker.brokerId);
-                context.saturdayExternalWorkers.delete(altBroker.brokerId);
-              }
-              console.log(`   ⚠️ Chain swap revertido — ${oldBroker.brokerName} ainda bloqueado após swap`);
-            }
-          } else {
-            console.log(`   ❌ Nenhum alternativo encontrado para ${conflictDemand.locationName} ${conflictDemand.dateStr}`);
-          }
-        }
-
-        if (chainSwapDone) break;
-      }
-
-      // Bloqueio por consecutivos (Regra 8) — tentar mover o externo do dia adjacente
-      if (check.rule === "REGRA8_CONSECUTIVO" || check.rule === "REGRA_3_DIAS_SEGUIDOS") {
-        // Similar logic but for consecutive day blocking
-        // For now, skip — consecutive blocking is less critical than weekend blocking
-        console.log(`   ⏭️ ${broker.brokerName} bloqueado por consecutivos — chain swap para consecutivos não implementado nesta etapa`);
-      }
-    }
-
-    if (!allocatedDemands.has(demandKey)) {
-      console.log(`   ❌ Chain swap falhou para ${demand.locationName} ${demand.dateStr} ${demand.shift}`);
-    }
-  }
-
-  console.log(`\n📊 CHAIN SWAP RESULTADO: ${swapsSuccessful}/${swapsAttempted} bem-sucedidos`);
-  return { swapsAttempted, swapsSuccessful };
-}
-
-// Helper: encontra substituto para sábado interno quando queremos liberar um corretor
-function findSaturdayInternalSubstitute(
-  brokerToFreeId: string,
-  context: AllocationContext,
-  saturdayDateStr: string
-): BrokerQueueItem | null {
-  // Buscar corretores que:
-  // 1. Têm sábado disponível
-  // 2. Não estão na lista de saturdayInternalWorkers (ainda)
-  // 3. Não têm conflito no domingo
-  // 4. Não têm externo no sábado
-  const sundayStr = format(addDays(new Date(saturdayDateStr + "T00:00:00"), 1), "yyyy-MM-dd");
-
-  for (const candidate of context.brokerQueue) {
-    if (candidate.brokerId === brokerToFreeId) continue;
-    if (!candidate.availableWeekdays.includes("saturday")) continue;
-    if (context.saturdayInternalWorkers?.has(candidate.brokerId)) continue;
-
-    // Não deve ter externo no sábado
-    const hasExternalSat = context.assignments.some(a =>
-      a.broker_id === candidate.brokerId &&
-      a.assignment_date === saturdayDateStr &&
-      !context.internalLocationIds?.has(a.location_id)
-    );
-    if (hasExternalSat) continue;
-
-    // Não deve ter nada no domingo (Regra 9)
-    const hasSunday = context.assignments.some(a =>
-      a.broker_id === candidate.brokerId &&
-      a.assignment_date === sundayStr
-    );
-    if (hasSunday) continue;
-
-    // Boa opção!
-    console.log(`   🔄 Substituto para sábado interno: ${candidate.brokerName}`);
-    return candidate;
-  }
-
-  return null;
-}
-
-// ═══════════════════════════════════════════════════════════
-// REBALANCEAMENTO OBRIGATÓRIO VIA TROCAS
-// Move alocações de corretores com 3+ externos para corretores com 0-1
-// Garante equilíbrio obrigatório de distribuição
-// ═══════════════════════════════════════════════════════════
-function rebalanceDistributionViaSwaps(
-  context: AllocationContext,
-  possibleDemands: ExternalDemand[],
-  allocatedDemands: Set<string>,
-  internalLocIds: Set<string>,
-  relaxedAllocations: { demand: string; pass: number; reason: string }[]
-): { swapsAttempted: number; swapsSuccessful: number } {
-  console.log("\n⚖️ REBALANCEAMENTO OBRIGATÓRIO VIA TROCAS");
-  console.log("─────────────────────────────────────────────────────────────");
-
-  let swapsAttempted = 0;
-  let swapsSuccessful = 0;
-  const MAX_REBALANCE_SWAPS = 40;
-
-  for (let iteration = 0; iteration < MAX_REBALANCE_SWAPS; iteration++) {
-    // Cálculo dinâmico de max/min entre corretores com locais externos
-    const externalEligible = context.brokerQueue.filter(b => b.externalLocationCount > 0);
-    if (externalEligible.length === 0) break;
-
-    const maxCount = Math.max(...externalEligible.map(b => b.externalShiftCount));
-    const minCount = Math.min(...externalEligible.map(b => b.externalShiftCount));
-
-    if (maxCount - minCount < 2) {
-      console.log(`   ✅ Equilíbrio atingido (iter ${iteration}): max=${maxCount}, min=${minCount}, diff=${maxCount - minCount}`);
-      break;
-    }
-
-    const overBrokers = externalEligible
-      .filter(b => b.externalShiftCount === maxCount)
-      .sort((a, b) => b.externalShiftCount - a.externalShiftCount);
-
-    const underBrokers = externalEligible
-      .filter(b => b.externalShiftCount === minCount)
-      .sort((a, b) => a.externalShiftCount - b.externalShiftCount);
-
-    console.log(`   📊 Iteração ${iteration + 1}: ${overBrokers.length} over(${maxCount}), ${underBrokers.length} under(${minCount}), diff=${maxCount - minCount}`);
-
-    let swappedThisIteration = false;
-
-    // ═══════════════════════════════════════════════════════════
-    // TENTATIVA 1: SWAP DIRETO (over → under)
-    // ═══════════════════════════════════════════════════════════
-    for (const overBroker of overBrokers) {
-      if (swappedThisIteration) break;
-
-      const overAllocations = context.assignments.filter(a =>
-        a.broker_id === overBroker.brokerId &&
-        !internalLocIds.has(a.location_id)
-      );
-
-      for (const allocation of overAllocations) {
-        if (swappedThisIteration) break;
-
-        const demandForAlloc = possibleDemands.find(d =>
-          d.locationId === allocation.location_id &&
-          d.dateStr === allocation.assignment_date &&
-          d.shift === allocation.shift_type
-        );
-        if (!demandForAlloc) continue;
-
-        for (const underBroker of underBrokers) {
-          if (underBroker.externalShiftCount > minCount) continue;
-          if (!demandForAlloc.eligibleBrokerIds.includes(underBroker.brokerId)) continue;
-
-          // Temporariamente remover a alocação do over para verificar regras do under
-          const allocIndex = context.assignments.indexOf(allocation);
-          context.assignments.splice(allocIndex, 1);
-          context.dailyExternalAssignments.get(allocation.assignment_date)?.delete(overBroker.brokerId);
-          overBroker.externalShiftCount--;
-
-          const check = checkTrulyInviolableRules(underBroker, demandForAlloc, context);
-
-          if (check.allowed) {
-            swapsAttempted++;
-            allocation.broker_id = underBroker.brokerId;
-            context.assignments.push(allocation);
-            underBroker.externalShiftCount++;
-
-            if (!context.dailyExternalAssignments.has(allocation.assignment_date)) {
-              context.dailyExternalAssignments.set(allocation.assignment_date, new Set());
-            }
-            context.dailyExternalAssignments.get(allocation.assignment_date)!.add(underBroker.brokerId);
-
-            const dayOfWeek = getDay(new Date(allocation.assignment_date + "T00:00:00"));
-            if (dayOfWeek === 6) {
-              context.saturdayExternalWorkers.delete(overBroker.brokerId);
-              context.saturdayExternalWorkers.add(underBroker.brokerId);
-            }
-
-            swapsSuccessful++;
-            swappedThisIteration = true;
-
-            relaxedAllocations.push({
-              demand: `${demandForAlloc.locationName} ${demandForAlloc.dateStr} ${demandForAlloc.shift}`,
-              pass: 9,
-              reason: `REBALANCEAMENTO: ${overBroker.brokerName}(${overBroker.externalShiftCount + 1}→${overBroker.externalShiftCount}) → ${underBroker.brokerName}(${underBroker.externalShiftCount - 1}→${underBroker.externalShiftCount})`
-            });
-
-            console.log(`   ✅ SWAP DIRETO: ${demandForAlloc.locationName} ${demandForAlloc.dateStr} ${demandForAlloc.shift}`);
-            console.log(`      ${overBroker.brokerName} (${overBroker.externalShiftCount + 1}→${overBroker.externalShiftCount}) → ${underBroker.brokerName} (${underBroker.externalShiftCount - 1}→${underBroker.externalShiftCount})`);
-            break;
-          } else {
-            // Reverter: colocar de volta
-            context.assignments.push(allocation);
-            overBroker.externalShiftCount++;
-            if (!context.dailyExternalAssignments.has(allocation.assignment_date)) {
-              context.dailyExternalAssignments.set(allocation.assignment_date, new Set());
-            }
-            context.dailyExternalAssignments.get(allocation.assignment_date)!.add(overBroker.brokerId);
-          }
-        }
-      }
-    }
-
-    // ═══════════════════════════════════════════════════════════
-    // TENTATIVA 2: CHAIN SWAP DE 2 HOPS (over → mid → under)
-    // Quando swap direto falha, tentar cadeia: mover alocação do over
-    // para um intermediário, e mover uma alocação do intermediário para o under
-    // ═══════════════════════════════════════════════════════════
-    if (!swappedThisIteration) {
-      for (const overBroker of overBrokers) {
-        if (swappedThisIteration) break;
-
-        const overAllocations = context.assignments.filter(a =>
-          a.broker_id === overBroker.brokerId &&
-          !internalLocIds.has(a.location_id)
-        );
-
-        for (const overAlloc of overAllocations) {
-          if (swappedThisIteration) break;
-
-          const overDemand = possibleDemands.find(d =>
-            d.locationId === overAlloc.location_id &&
-            d.dateStr === overAlloc.assignment_date &&
-            d.shift === overAlloc.shift_type
-          );
-          if (!overDemand) continue;
-
-          // Encontrar intermediários que possam receber a alocação do over
-          const midCandidates = context.brokerQueue.filter(mid => {
-            if (mid.brokerId === overBroker.brokerId) return false;
-            if (mid.externalShiftCount >= maxCount) return false; // Não empurrar para quem já está no topo
-            if (!overDemand.eligibleBrokerIds.includes(mid.brokerId)) return false;
-            return true;
-          });
-
-          for (const midBroker of midCandidates) {
-            if (swappedThisIteration) break;
-
-            // Verificar se mid pode receber a alocação do over
-            const overAllocIdx = context.assignments.indexOf(overAlloc);
-            context.assignments.splice(overAllocIdx, 1);
-            context.dailyExternalAssignments.get(overAlloc.assignment_date)?.delete(overBroker.brokerId);
-            overBroker.externalShiftCount--;
-
-            const midCheck = checkTrulyInviolableRules(midBroker, overDemand, context);
-            if (!midCheck.allowed) {
-              // Reverter
-              context.assignments.push(overAlloc);
-              overBroker.externalShiftCount++;
-              if (!context.dailyExternalAssignments.has(overAlloc.assignment_date)) {
-                context.dailyExternalAssignments.set(overAlloc.assignment_date, new Set());
-              }
-              context.dailyExternalAssignments.get(overAlloc.assignment_date)!.add(overBroker.brokerId);
-              continue;
-            }
-
-            // Mid pode receber. Agora, verificar se mid tem uma alocação que pode ir para under
-            // Primeiro, dar a alocação do over para mid temporariamente
-            overAlloc.broker_id = midBroker.brokerId;
-            context.assignments.push(overAlloc);
-            midBroker.externalShiftCount++;
-            if (!context.dailyExternalAssignments.has(overAlloc.assignment_date)) {
-              context.dailyExternalAssignments.set(overAlloc.assignment_date, new Set());
-            }
-            context.dailyExternalAssignments.get(overAlloc.assignment_date)!.add(midBroker.brokerId);
-
-            // Encontrar alocação do mid que possa ir para under
-            const midAllocations = context.assignments.filter(a =>
-              a.broker_id === midBroker.brokerId &&
-              !internalLocIds.has(a.location_id) &&
-              a !== overAlloc // Não a que acabamos de dar
-            );
-
-            let hop2Done = false;
-            for (const midAlloc of midAllocations) {
-              const midDemand = possibleDemands.find(d =>
-                d.locationId === midAlloc.location_id &&
-                d.dateStr === midAlloc.assignment_date &&
-                d.shift === midAlloc.shift_type
-              );
-              if (!midDemand) continue;
-
-              for (const underBroker of underBrokers) {
-                if (underBroker.externalShiftCount > minCount) continue;
-                if (!midDemand.eligibleBrokerIds.includes(underBroker.brokerId)) continue;
-
-                // Remover alocação do mid temporariamente
-                const midAllocIdx = context.assignments.indexOf(midAlloc);
-                context.assignments.splice(midAllocIdx, 1);
-                context.dailyExternalAssignments.get(midAlloc.assignment_date)?.delete(midBroker.brokerId);
-                midBroker.externalShiftCount--;
-
-                const underCheck = checkTrulyInviolableRules(underBroker, midDemand, context);
-                if (underCheck.allowed) {
-                  // SUCESSO! 2-hop chain swap
-                  swapsAttempted += 2;
-                  midAlloc.broker_id = underBroker.brokerId;
-                  context.assignments.push(midAlloc);
-                  underBroker.externalShiftCount++;
-                  if (!context.dailyExternalAssignments.has(midAlloc.assignment_date)) {
-                    context.dailyExternalAssignments.set(midAlloc.assignment_date, new Set());
-                  }
-                  context.dailyExternalAssignments.get(midAlloc.assignment_date)!.add(underBroker.brokerId);
-
-                  swapsSuccessful += 2;
-                  swappedThisIteration = true;
-                  hop2Done = true;
-
-                  relaxedAllocations.push({
-                    demand: `2-HOP CHAIN`,
-                    pass: 9,
-                    reason: `${overBroker.brokerName}(${overBroker.externalShiftCount + 1}→${overBroker.externalShiftCount}) →[${midBroker.brokerName}]→ ${underBroker.brokerName}(${underBroker.externalShiftCount - 1}→${underBroker.externalShiftCount})`
-                  });
-
-                  console.log(`   ✅ 2-HOP CHAIN: ${overBroker.brokerName}(${overBroker.externalShiftCount + 1}→${overBroker.externalShiftCount}) → ${midBroker.brokerName} → ${underBroker.brokerName}(${underBroker.externalShiftCount - 1}→${underBroker.externalShiftCount})`);
-                  break;
-                } else {
-                  // Reverter mid allocation
-                  context.assignments.push(midAlloc);
-                  midBroker.externalShiftCount++;
-                  if (!context.dailyExternalAssignments.has(midAlloc.assignment_date)) {
-                    context.dailyExternalAssignments.set(midAlloc.assignment_date, new Set());
-                  }
-                  context.dailyExternalAssignments.get(midAlloc.assignment_date)!.add(midBroker.brokerId);
-                }
-              }
-              if (hop2Done) break;
-            }
-
-            if (!hop2Done) {
-              // Reverter tudo: devolver alocação do over
-              const revertIdx = context.assignments.indexOf(overAlloc);
-              if (revertIdx !== -1) context.assignments.splice(revertIdx, 1);
-              context.dailyExternalAssignments.get(overAlloc.assignment_date)?.delete(midBroker.brokerId);
-              midBroker.externalShiftCount--;
-
-              overAlloc.broker_id = overBroker.brokerId;
-              context.assignments.push(overAlloc);
-              overBroker.externalShiftCount++;
-              if (!context.dailyExternalAssignments.has(overAlloc.assignment_date)) {
-                context.dailyExternalAssignments.set(overAlloc.assignment_date, new Set());
-              }
-              context.dailyExternalAssignments.get(overAlloc.assignment_date)!.add(overBroker.brokerId);
-            }
-          }
-        }
-      }
-    }
-
-    if (!swappedThisIteration) {
-      console.log(`   ⚠️ Nenhum swap possível nesta iteração (direto ou 2-hop) — parando`);
-      break;
-    }
-  }
-
-  // Log final de distribuição
-  const dist = {
-    with0: context.brokerQueue.filter(b => b.externalShiftCount === 0 && b.externalLocationCount > 0).length,
-    with1: context.brokerQueue.filter(b => b.externalShiftCount === 1 && b.externalLocationCount > 0).length,
-    with2: context.brokerQueue.filter(b => b.externalShiftCount === 2 && b.externalLocationCount > 0).length,
-    with3: context.brokerQueue.filter(b => b.externalShiftCount === 3 && b.externalLocationCount > 0).length,
-    with4plus: context.brokerQueue.filter(b => b.externalShiftCount >= 4 && b.externalLocationCount > 0).length,
-  };
-  console.log(`\n   📊 DISTRIBUIÇÃO APÓS REBALANCEAMENTO OBRIGATÓRIO:`);
-  console.log(`      0 externos: ${dist.with0} | 1 externo: ${dist.with1} | 2 externos: ${dist.with2} | 3: ${dist.with3} | 4+: ${dist.with4plus}`);
-  console.log(`   📊 Resultado: ${swapsSuccessful}/${swapsAttempted} swaps`);
-
-  return { swapsAttempted, swapsSuccessful };
-}
-
-
 function deConsecutivizeExternals(
   context: AllocationContext,
   possibleDemands: ExternalDemand[],
@@ -2222,8 +1679,7 @@ function findBrokerForDemand(
   pass: number,
   bessaBrokersAvailableSaturday: number = 0,
   collectBlockedBrokers: boolean = false,
-  attemptSeed: number = 1,
-  maxAllowedExternals: number = MAX_EXTERNAL_SHIFTS_HARD_CAP
+  attemptSeed: number = 1
 ): { broker: BrokerQueueItem | null; reason: string; blockedBrokers?: BlockedBrokerInfo[] } {
   
   // ═══════════════════════════════════════════════════════════════════════════
@@ -2485,20 +1941,6 @@ function findBrokerForDemand(
 
   // Fluxo normal de alocação
   for (const broker of sortedQueue) {
-    // ═══════════════════════════════════════════════════════════
-    // GATE DE NÍVEL: Bloquear brokers que já atingiram o nível atual
-    // ═══════════════════════════════════════════════════════════
-    if (broker.externalShiftCount >= maxAllowedExternals) {
-      if (collectBlockedBrokers) {
-        blockedBrokers.push({
-          brokerId: broker.brokerId,
-          brokerName: broker.brokerName,
-          rule: "GATE DE NÍVEL",
-          reason: `Já tem ${broker.externalShiftCount} externos (máximo neste nível: ${maxAllowedExternals})`
-        });
-      }
-      continue;
-    }
     // Proteção de reserva
     if (demandIsReservedFor && demandIsReservedFor !== broker.brokerId && pass < 5) {
       if (collectBlockedBrokers) {
@@ -2547,13 +1989,13 @@ function findBrokerForDemand(
     const worksSaturdayExternal = context.saturdayExternalWorkers?.has(broker.brokerId);
     const worksSaturday = worksSaturdayInternal || worksSaturdayExternal;
     
-    if (worksSaturday && broker.externalShiftCount >= 1 && !isSaturday && maxAllowedExternals <= 2) {
+    if (worksSaturday && broker.externalShiftCount >= 1 && !isSaturday) {
       if (collectBlockedBrokers) {
         blockedBrokers.push({
           brokerId: broker.brokerId,
           brokerName: broker.brokerName,
-          rule: "REGRA: Sábado + 1 externo máx (flexível)",
-          reason: `Trabalha sábado - limite de 1 externo nos níveis 1-2 (tem ${broker.externalShiftCount})`
+          rule: "REGRA: Sábado + 1 externo máx",
+          reason: `Trabalha sábado - limite de 1 externo atingido (tem ${broker.externalShiftCount})`
         });
       }
       continue;
@@ -2563,13 +2005,13 @@ function findBrokerForDemand(
     // NOVA REGRA: EVITAR SEXTA PARA QUEM TRABALHA SÁBADO
     // Evita dias consecutivos (sexta + sábado)
     // ═══════════════════════════════════════════════════════════
-    if (worksSaturday && demand.dayOfWeek === "friday" && maxAllowedExternals <= 2) {
+    if (worksSaturday && demand.dayOfWeek === "friday") {
       if (collectBlockedBrokers) {
         blockedBrokers.push({
           brokerId: broker.brokerId,
           brokerName: broker.brokerName,
-          rule: "REGRA: Evitar sexta com sábado (flexível)",
-          reason: `Trabalha sábado - evitar consecutivo (sexta) nos níveis 1-2`
+          rule: "REGRA: Evitar sexta com sábado",
+          reason: `Trabalha sábado - evitar consecutivo (sexta)`
         });
       }
       continue;
@@ -2762,7 +2204,7 @@ export async function generateWeeklyScheduleWithRetry(
       
       const criticalViolations = validation.violations.filter(v => v.severity === 'critical');
       
-      // Verificar violações verdadeiramente invioláveis (4, 6, 9, ESCADA)
+      // Verificar violações verdadeiramente invioláveis (4, 6, 9)
       const hasInviolableViolations = criticalViolations.some(v => 
         v.rule.includes("REGRA 4") || 
         v.rule.includes("locais externos diferentes") ||
@@ -2772,14 +2214,13 @@ export async function generateWeeklyScheduleWithRetry(
         v.rule.includes("sábado E domingo") ||
         v.rule.includes("sábado e domingo") ||
         v.rule.includes("sábado OU domingo") ||
-        v.rule.includes("Sáb ou Dom") ||
-        v.rule.includes("ESCADA DE DISTRIBUIÇÃO")
+        v.rule.includes("Sáb ou Dom")
       );
       
       if (hasInviolableViolations) {
-        console.log(`❌ Tentativa ${attempt}: violações INVIOLÁVEIS detectadas`);
+        console.log(`❌ Tentativa ${attempt}: violações INVIOLÁVEIS detectadas (Regra 4, 6 ou 9)`);
         for (const v of criticalViolations.filter(v => 
-          v.rule.includes("REGRA 4") || v.rule.includes("REGRA 6") || v.rule.includes("REGRA 9") || v.rule.includes("Sáb ou Dom") || v.rule.includes("ESCADA")
+          v.rule.includes("REGRA 4") || v.rule.includes("REGRA 6") || v.rule.includes("REGRA 9") || v.rule.includes("Sáb ou Dom")
         )) {
           console.log(`   ⛔ ${v.rule}: ${v.brokerName} - ${v.details}`);
         }
@@ -3782,88 +3223,25 @@ async function generateWeeklyScheduleWithAccumulator(
   ).length;
 
   const allocatedDemands = new Set<string>();
-  // Contadores movidos para após o loop de níveis
+  let allocatedPass1 = 0, allocatedPass2 = 0, allocatedPass3 = 0, allocatedPass4 = 0, allocatedPass5 = 0;
   const relaxedAllocations: { demand: string; pass: number; reason: string }[] = [];
 
-  // ═══════════════════════════════════════════════════════════
-  // ETAPA 5: ALOCAÇÃO POR NÍVEIS COM GATE OBRIGATÓRIO
-  // Nível 1: todos com 0→1 | Nível 2: todos com 1→2
-  // Nível 3: GATE (todos ≥2?) → 2→3 | Nível 4: GATE (todos ≥3?) → 3→4
-  // ═══════════════════════════════════════════════════════════
-  const levelCounts = [0, 0, 0, 0];
-  
-  for (let level = 1; level <= 4; level++) {
-    console.log(`\n   🎯 NÍVEL ${level}: Alocando para brokers com < ${level} externos`);
-    
-    // GATE para níveis 3+: verificar se todos elegíveis já atingiram level-1
-    if (level >= 3) {
-      // Gate inteligente: calcular globalMin apenas entre brokers que podem receber alguma demanda restante
-      const unallocatedDemands = possibleDemands.filter(d => !allocatedDemands.has(`${d.locationId}-${d.dateStr}-${d.shift}`));
-      const externalEligible = context.brokerQueue.filter(b => {
-        if (b.externalLocationCount <= 0) return false;
-        // Excluir brokers que não podem receber NENHUMA demanda restante (por elegibilidade real, não por Regra 10)
-        const canReceiveAny = unallocatedDemands.some(d => {
-          if (!d.eligibleBrokerIds.includes(b.brokerId)) return false;
-          const check = checkTrulyInviolableRules(b, d, context);
-          return check.allowed;
-        });
-        return canReceiveAny;
-      });
-      
-      if (externalEligible.length > 0) {
-        let globalMin = Math.min(...externalEligible.map(b => b.externalShiftCount));
-        console.log(`   📊 Gate nível ${level}: ${externalEligible.length} brokers elegíveis para demandas restantes, globalMin=${globalMin}`);
-        
-        if (globalMin < level - 1) {
-          console.log(`   🚫 GATE NÍVEL ${level}: globalMin=${globalMin} < ${level - 1} — tentando chain swaps extras`);
-          
-          // Rodar chain swaps extras para tentar levantar o globalMin
-          const extraChainResult = chainSwapForUnallocated(context, possibleDemands, allocatedDemands, internalLocIds, relaxedAllocations);
-          console.log(`   🔗 Chain swaps extras: ${extraChainResult.swapsSuccessful} realizados`);
-          
-          // Re-calcular com filtro inteligente
-          const stillEligible = context.brokerQueue.filter(b => {
-            if (b.externalLocationCount <= 0) return false;
-            const updatedUnalloc = possibleDemands.filter(d => !allocatedDemands.has(`${d.locationId}-${d.dateStr}-${d.shift}`));
-            return updatedUnalloc.some(d => {
-              if (!d.eligibleBrokerIds.includes(b.brokerId)) return false;
-              const check = checkTrulyInviolableRules(b, d, context);
-              return check.allowed;
-            });
-          });
-          
-          if (stillEligible.length > 0) {
-            globalMin = Math.min(...stillEligible.map(b => b.externalShiftCount));
-          } else {
-            globalMin = level - 1; // Ninguém mais elegível, liberar gate
-          }
-          
-          if (globalMin < level - 1) {
-            console.log(`   ⚠️ GATE NÍVEL ${level} AINDA BLOQUEADO: globalMin=${globalMin} — pulando nível ${level}`);
-            continue;
-          }
-          console.log(`   ✅ GATE NÍVEL ${level} LIBERADO após chain swaps: globalMin=${globalMin}`);
-        } else {
-          console.log(`   ✅ GATE NÍVEL ${level} OK: globalMin=${globalMin} >= ${level - 1}`);
-        }
-      } else {
-        console.log(`   ℹ️ GATE NÍVEL ${level}: Nenhum broker elegível para demandas restantes — liberando gate`);
-      }
-    }
-    
-    // Alocar demandas para este nível
+  // Pass 1-5: Alocação normal
+  for (let pass = 1; pass <= 5; pass++) {
     for (const demand of possibleDemands) {
       const demandKey = `${demand.locationId}-${demand.dateStr}-${demand.shift}`;
       if (allocatedDemands.has(demandKey)) continue;
 
-      const result = findBrokerForDemand(demand, context, level, bessaBrokersAvailableSaturday, false, attemptSeed, level);
+      const result = findBrokerForDemand(demand, context, pass, bessaBrokersAvailableSaturday, false, attemptSeed);
       
       if (result.broker) {
         allocateDemand(demand, result.broker, context);
         allocatedDemands.add(demandKey);
-        levelCounts[level - 1]++;
         
-        // Atualizar saturdayExternalWorkers IMEDIATAMENTE ao alocar sábado
+        // ═══════════════════════════════════════════════════════════
+        // ATUALIZAR saturdayExternalWorkers IMEDIATAMENTE ao alocar sábado
+        // Isso permite que a regra de 1 externo seja aplicada corretamente
+        // ═══════════════════════════════════════════════════════════
         if (demand.dayOfWeek === "saturday") {
           context.saturdayExternalWorkers.add(result.broker.brokerId);
           console.log(`   📌 ${result.broker.brokerName} marcado para sábado externo → limite 1 externo`);
@@ -3874,23 +3252,17 @@ async function generateWeeklyScheduleWithAccumulator(
             );
           }
         }
-      }
-    }
-    
-    console.log(`   📊 Nível ${level}: ${levelCounts[level - 1]} alocações`);
-    
-    // Chain swaps entre níveis para cobrir gaps
-    if (level < 4) {
-      const interLevelChain = chainSwapForUnallocated(context, possibleDemands, allocatedDemands, internalLocIds, relaxedAllocations);
-      if (interLevelChain.swapsSuccessful > 0) {
-        console.log(`   🔗 Chain swaps inter-nível ${level}→${level + 1}: ${interLevelChain.swapsSuccessful} realizados`);
+        
+        switch (pass) {
+          case 1: allocatedPass1++; break;
+          case 2: allocatedPass2++; break;
+          case 3: allocatedPass3++; break;
+          case 4: allocatedPass4++; break;
+          case 5: allocatedPass5++; break;
+        }
       }
     }
   }
-
-  // Log de distribuição por nível
-  const allocatedPass1 = levelCounts[0], allocatedPass2 = levelCounts[1], allocatedPass3 = levelCounts[2], allocatedPass4 = levelCounts[3];
-  const allocatedPass5 = 0; // Não há mais pass 5 separado
 
   // ═══════════════════════════════════════════════════════════
   // ETAPA 8.6: REBALANCEAMENTO "2 ANTES DO 3" - GATE GLOBAL
@@ -3967,13 +3339,6 @@ async function generateWeeklyScheduleWithAccumulator(
   // ETAPA 8.8: DESCONSECUTIVAR (antes do último recurso)
   // ═══════════════════════════════════════════════════════════
   const deConsecutiveResult = deConsecutivizeExternals(context, possibleDemands, internalLocIds);
-
-  // ═══════════════════════════════════════════════════════════
-  // ETAPA 8.8b: CHAIN SWAP PARA DEMANDAS NÃO ALOCADAS
-  // Tenta preencher demandas vazias via cadeia de trocas
-  // Ex: mover sábado de Leonardo para Daniela, liberar Leonardo para domingo
-  // ═══════════════════════════════════════════════════════════
-  const chainSwapResult = chainSwapForUnallocated(context, possibleDemands, allocatedDemands, internalLocIds, relaxedAllocations);
   
   // ═══════════════════════════════════════════════════════════
   // ETAPA 8.9: ALOCAÇÃO DE PLANTÕES INTERNOS (SÁBADO)
@@ -4261,89 +3626,182 @@ async function generateWeeklyScheduleWithAccumulator(
     console.log(`   ❌ Sem sábado na semana ou sem locais internos (saturdayDate=${saturdayDate}, internalLocations=${internalLocationsData?.length || 0})`);
   }
 
-  // ETAPA 9: Último recurso — COM GATE DE NÍVEL UNIFICADO (1→2→3→4)
+  // ETAPA 9: Último recurso
   const preLastResortUnallocated = possibleDemands.filter(d => {
     const demandKey = `${d.locationId}-${d.dateStr}-${d.shift}`;
     return !allocatedDemands.has(demandKey);
   });
   
   if (preLastResortUnallocated.length > 0) {
-    console.log(`\n🚨 ETAPA 9: ${preLastResortUnallocated.length} demandas para alocação de emergência (COM GATE DE NÍVEL)`);
+    console.log(`\n🚨 ETAPA 9: ${preLastResortUnallocated.length} demandas para alocação de emergência`);
     
-    // Aplicar os MESMOS níveis 1→2→3→4 que a ETAPA 5
-    for (let emergencyLevel = 1; emergencyLevel <= 4; emergencyLevel++) {
-      const pendingNow = preLastResortUnallocated.filter(d => 
-        !allocatedDemands.has(`${d.locationId}-${d.dateStr}-${d.shift}`)
-      );
-      if (pendingNow.length === 0) break;
+    // ═══════════════════════════════════════════════════════════
+    // GATE GLOBAL: Verificar se ALGUM corretor ainda pode chegar a 2
+    // Se sim, NINGUÉM pode receber o 3º externo
+    // ═══════════════════════════════════════════════════════════
+    const stillPendingDemands = preLastResortUnallocated.filter(d => 
+      !allocatedDemands.has(`${d.locationId}-${d.dateStr}-${d.shift}`)
+    );
+    
+    const globalGateCheck = canAnyoneStillReachTwo(stillPendingDemands, context);
+    
+    if (globalGateCheck.canReach) {
+      console.log(`   🚫 GATE GLOBAL ATIVO: ${globalGateCheck.brokersUnderTwo.length} corretor(es) ainda pode(m) receber para chegar a 2:`);
+      console.log(`      ${globalGateCheck.brokersUnderTwo.join(', ')}`);
+      console.log(`   → NINGUÉM receberá 3º externo enquanto houver corretor elegível com <2`);
+    } else {
+      console.log(`   ✅ GATE GLOBAL LIBERADO: todos os corretores elegíveis já têm 2+ ou estão bloqueados`);
+    }
+    
+    // PASSO 1: Primeiro, tentar alocar para quem tem menos de 2 externos
+    console.log(`\n   📍 PASSO 1: Alocar para corretores com <2 externos`);
+    for (const demand of preLastResortUnallocated) {
+      const demandKey = `${demand.locationId}-${demand.dateStr}-${demand.shift}`;
+      if (allocatedDemands.has(demandKey)) continue;
       
-      console.log(`\n   🎯 ETAPA 9 NÍVEL ${emergencyLevel}: ${pendingNow.length} demandas pendentes`);
+      // Ordenar elegíveis por: menos externos primeiro
+      const eligibleSorted = [...demand.eligibleBrokerIds].sort((a, b) => {
+        const brokerA = context.brokerQueue.find(br => br.brokerId === a);
+        const brokerB = context.brokerQueue.find(br => br.brokerId === b);
+        const extCountA = brokerA?.externalShiftCount || 0;
+        const extCountB = brokerB?.externalShiftCount || 0;
+        return extCountA - extCountB;
+      });
       
-      // GATE para níveis 3+
-      if (emergencyLevel >= 3) {
-        const externalEligible = context.brokerQueue.filter(b => {
-          if (b.externalLocationCount <= 0) return false;
-          return pendingNow.some(d => {
-            if (!d.eligibleBrokerIds.includes(b.brokerId)) return false;
-            const check = checkTrulyInviolableRules(b, d, context);
-            return check.allowed;
-          });
-        });
+      for (const brokerId of eligibleSorted) {
+        const broker = context.brokerQueue.find(b => b.brokerId === brokerId);
+        if (!broker) continue;
         
-        if (externalEligible.length > 0) {
-          const globalMin = Math.min(...externalEligible.map(b => b.externalShiftCount));
-          if (globalMin < emergencyLevel - 1) {
-            console.log(`   🚫 ETAPA 9 GATE NÍVEL ${emergencyLevel}: globalMin=${globalMin} < ${emergencyLevel - 1} — pulando`);
-            continue;
-          }
-          console.log(`   ✅ ETAPA 9 GATE NÍVEL ${emergencyLevel} OK: globalMin=${globalMin}`);
-        }
+        // Só aceitar corretor com menos de 2 neste passo
+        if (broker.externalShiftCount >= MAX_EXTERNAL_SHIFTS_PER_WEEK) continue;
+        
+        const check = checkTrulyInviolableRulesWithRelaxation(broker, demand, context, false);
+        if (!check.allowed) continue;
+        
+        allocateDemand(demand, broker, context);
+        allocatedDemands.add(demandKey);
+        console.log(`   ✅ ${demand.locationName} ${demand.dateStr} ${demand.shift} → ${broker.brokerName} (agora tem ${broker.externalShiftCount} externos)`);
+        break;
       }
+    }
+    
+    // PASSO 2: Se ainda houver demandas pendentes E o gate global liberou, permitir 3º externo
+    const stillPendingAfterPass1 = preLastResortUnallocated.filter(d => 
+      !allocatedDemands.has(`${d.locationId}-${d.dateStr}-${d.shift}`)
+    );
+    
+    if (stillPendingAfterPass1.length > 0) {
+      // Recalcular gate global
+      const gateCheckAfterPass1 = canAnyoneStillReachTwo(stillPendingAfterPass1, context);
       
-      // Alocar relaxando Regra 8 (consecutivos) mas respeitando o nível
-      for (const demand of pendingNow) {
-        const demandKey = `${demand.locationId}-${demand.dateStr}-${demand.shift}`;
-        if (allocatedDemands.has(demandKey)) continue;
+      if (gateCheckAfterPass1.canReach) {
+        console.log(`\n   🚫 GATE GLOBAL AINDA ATIVO: ${gateCheckAfterPass1.brokersUnderTwo.join(', ')} ainda podem receber`);
+        console.log(`   → Tentando alocar para eles primeiro antes de permitir 3º externo`);
         
-        const eligibleSorted = [...demand.eligibleBrokerIds].sort((a, b) => {
-          const brokerA = context.brokerQueue.find(br => br.brokerId === a);
-          const brokerB = context.brokerQueue.find(br => br.brokerId === b);
-          return (brokerA?.externalShiftCount || 0) - (brokerB?.externalShiftCount || 0);
-        });
-        
-        for (const brokerId of eligibleSorted) {
-          const broker = context.brokerQueue.find(b => b.brokerId === brokerId);
-          if (!broker) continue;
+        // Última tentativa de alocar para quem tem <2 (relaxando Regra 8 se necessário)
+        for (const demand of stillPendingAfterPass1) {
+          const demandKey = `${demand.locationId}-${demand.dateStr}-${demand.shift}`;
+          if (allocatedDemands.has(demandKey)) continue;
           
-          // GATE DE NÍVEL: respeitar o nível atual
-          if (broker.externalShiftCount >= emergencyLevel) continue;
-          // HARD CAP
-          if (broker.externalShiftCount >= MAX_EXTERNAL_SHIFTS_HARD_CAP) continue;
-          
-          const check = checkTrulyInviolableRulesWithRelaxation(broker, demand, context, emergencyLevel >= 2);
-          if (!check.allowed) continue;
-          
-          allocateDemand(demand, broker, context);
-          allocatedDemands.add(demandKey);
-          if (broker.externalShiftCount > MAX_EXTERNAL_SHIFTS_PER_WEEK) {
+          for (const brokerName of gateCheckAfterPass1.brokersUnderTwo) {
+            const broker = context.brokerQueue.find(b => b.brokerName === brokerName);
+            if (!broker || broker.externalShiftCount >= MAX_EXTERNAL_SHIFTS_PER_WEEK) continue;
+            if (!demand.eligibleBrokerIds.includes(broker.brokerId)) continue;
+            
+            // Tentar com Regra 8 relaxada
+            const check = checkTrulyInviolableRulesWithRelaxation(broker, demand, context, true);
+            if (!check.allowed) continue;
+            
+            allocateDemand(demand, broker, context);
+            allocatedDemands.add(demandKey);
             relaxedAllocations.push({ 
               demand: `${demand.locationName} ${demand.dateStr} ${demand.shift}`, 
               pass: 9, 
-              reason: `ETAPA 9 NÍVEL ${emergencyLevel}: ${broker.brokerName} (${broker.externalShiftCount} externos)` 
+              reason: `REGRA 8 RELAXADA para ${broker.brokerName} atingir 2 externos` 
             });
+            console.log(`   ⚠️ ${demand.locationName} ${demand.dateStr} ${demand.shift} → ${broker.brokerName} (Regra 8 relaxada, agora tem ${broker.externalShiftCount})`);
+            break;
           }
-          console.log(`   ✅ ETAPA 9: ${demand.locationName} ${demand.dateStr} ${demand.shift} → ${broker.brokerName} (nível ${emergencyLevel}, ${broker.externalShiftCount} externos)`);
-          break;
+        }
+      }
+      
+      // Recalcular novamente
+      const stillPendingFinal = preLastResortUnallocated.filter(d => 
+        !allocatedDemands.has(`${d.locationId}-${d.dateStr}-${d.shift}`)
+      );
+      
+      if (stillPendingFinal.length > 0) {
+        const finalGateCheck = canAnyoneStillReachTwo(stillPendingFinal, context);
+        
+        if (!finalGateCheck.canReach) {
+          console.log(`\n   ✅ GATE GLOBAL LIBERADO: permitindo 3º externo para demandas restantes`);
+          
+          // PASSO 3: Permitir 3º externo
+          for (const demand of stillPendingFinal) {
+            const demandKey = `${demand.locationId}-${demand.dateStr}-${demand.shift}`;
+            if (allocatedDemands.has(demandKey)) continue;
+            
+            // Obter fila FIFO do local para ordenação de terceiros plantões
+            const locationQueue = context.locationRotationQueues?.get(demand.locationId);
+            
+            const eligibleSorted = [...demand.eligibleBrokerIds].sort((a, b) => {
+              const brokerA = context.brokerQueue.find(br => br.brokerId === a);
+              const brokerB = context.brokerQueue.find(br => br.brokerId === b);
+              const extCountA = brokerA?.externalShiftCount || 0;
+              const extCountB = brokerB?.externalShiftCount || 0;
+              
+              // PRIORIDADE 1: Menos externos (todos terão 2 neste ponto, então empata)
+              if (extCountA !== extCountB) return extCountA - extCountB;
+              
+              // PRIORIDADE 2: Posição na fila FIFO do local (distribuição rotativa)
+              if (locationQueue && locationQueue.length > 0) {
+                const posA = locationQueue.find(q => q.broker_id === a)?.queue_position ?? 999;
+                const posB = locationQueue.find(q => q.broker_id === b)?.queue_position ?? 999;
+                if (posA !== posB) return posA - posB;
+              }
+              
+              // PRIORIDADE 3: Menos pares consecutivos
+              const pairsA = countConsecutivePairsIfAllocated(a, demand.dateStr, context);
+              const pairsB = countConsecutivePairsIfAllocated(b, demand.dateStr, context);
+              return pairsA - pairsB;
+            });
+            
+            for (const brokerId of eligibleSorted) {
+              const broker = context.brokerQueue.find(b => b.brokerId === brokerId);
+              if (!broker) continue;
+              
+              // HARD CAP: NUNCA permitir mais de 3 externos
+              if (broker.externalShiftCount >= MAX_EXTERNAL_SHIFTS_HARD_CAP) {
+                console.log(`   ⛔ ${broker.brokerName}: HARD CAP (${broker.externalShiftCount} externos) - BLOQUEADO`);
+                continue;
+              }
+              
+              const check = checkTrulyInviolableRulesWithRelaxation(broker, demand, context, true);
+              if (!check.allowed) continue;
+              
+              const wasOverLimit = broker.externalShiftCount >= MAX_EXTERNAL_SHIFTS_PER_WEEK;
+              allocateDemand(demand, broker, context);
+              allocatedDemands.add(demandKey);
+              
+              if (wasOverLimit) {
+                relaxedAllocations.push({ 
+                  demand: `${demand.locationName} ${demand.dateStr} ${demand.shift}`, 
+                  pass: 9, 
+                  reason: `3º EXTERNO: ${broker.brokerName} (gate global liberado)` 
+                });
+                console.log(`   🚨 ${demand.locationName} ${demand.dateStr} ${demand.shift} → ${broker.brokerName} (3º externo, gate liberado)`);
+              }
+              break;
+            }
+          }
+        } else {
+          console.log(`\n   ⚠️ ${stillPendingFinal.length} demandas ainda pendentes - gate global impede 3º externo`);
+          console.log(`      Corretores que ainda podem receber: ${finalGateCheck.brokersUnderTwo.join(', ')}`);
+          console.log(`      → Isso indica problema de configuração ou elegibilidade`);
         }
       }
     }
   }
-
-  // ═══════════════════════════════════════════════════════════
-  // ETAPA 9b: REBALANCEAMENTO OBRIGATÓRIO VIA TROCAS
-  // Move alocações de corretores com 3+ para corretores com 0-1
-  // ═══════════════════════════════════════════════════════════
-  const rebalanceResult = rebalanceDistributionViaSwaps(context, possibleDemands, allocatedDemands, internalLocIds, relaxedAllocations);
 
   // ═══════════════════════════════════════════════════════════
   // ETAPA 8.10: ALOCAÇÃO DE PLANTÕES INTERNOS (SEGUNDA A SEXTA)
@@ -4503,8 +3961,9 @@ async function generateWeeklyScheduleWithAccumulator(
   console.log(`\n   📊 Total de alocações após internos seg-sex: ${assignments.length}`);
 
   // ═══════════════════════════════════════════════════════════
-  // ETAPA 8.11: PASSE FINAL COM GATE DE NÍVEL UNIFICADO (1→2→3→4)
-  // Relaxa consecutivos mas RESPEITA a escada de distribuição
+  // ETAPA 8.11: PASSE FINAL CONSERVADOR - GARANTIR ALOCAÇÃO DE TODOS OS EXTERNOS
+  // Relaxa regras progressivamente para demandas externas não alocadas
+  // Ordem: 1) interno+externo seg-sex, 2) consecutivos, 3) gate 2-antes-3
   // NUNCA relaxa: disponibilidade dia/turno, vínculo ao local, hard cap
   // ═══════════════════════════════════════════════════════════
   const preEmergencyUnallocated = possibleDemands.filter(d => 
@@ -4512,98 +3971,46 @@ async function generateWeeklyScheduleWithAccumulator(
   );
 
   if (preEmergencyUnallocated.length > 0) {
-    console.log(`\n🚑 ETAPA 8.11: PASSE FINAL COM GATE DE NÍVEL - ${preEmergencyUnallocated.length} demandas externas ainda pendentes`);
+    console.log(`\n🚑 ETAPA 8.11: PASSE FINAL CONSERVADOR - ${preEmergencyUnallocated.length} demandas externas ainda pendentes`);
     
-    for (let finalLevel = 1; finalLevel <= 4; finalLevel++) {
-      const pendingNow = preEmergencyUnallocated.filter(d => 
-        !allocatedDemands.has(`${d.locationId}-${d.dateStr}-${d.shift}`)
-      );
-      if (pendingNow.length === 0) break;
+    for (const demand of preEmergencyUnallocated) {
+      const demandKey = `${demand.locationId}-${demand.dateStr}-${demand.shift}`;
+      if (allocatedDemands.has(demandKey)) continue;
       
-      console.log(`\n   🎯 ETAPA 8.11 NÍVEL ${finalLevel}: ${pendingNow.length} demandas pendentes`);
+      // Coletar corretores elegíveis (já configurados no local via eligibleBrokerIds)
+      const eligibleBrokers = context.brokerQueue.filter(b => {
+        if (!demand.eligibleBrokerIds.includes(b.brokerId)) return false;
+        if (!b.availableWeekdays.includes(demand.dayOfWeek)) return false;
+        // Hard cap nunca relaxado
+        if (b.externalShiftCount >= MAX_EXTERNAL_SHIFTS_HARD_CAP) return false;
+        return true;
+      });
       
-      // GATE para níveis 3+
-      if (finalLevel >= 3) {
-        const externalEligible = context.brokerQueue.filter(b => {
-          if (b.externalLocationCount <= 0) return false;
-          return pendingNow.some(d => {
-            if (!d.eligibleBrokerIds.includes(b.brokerId)) return false;
-            const check = checkTrulyInviolableRules(b, d, context);
-            return check.allowed;
+      // Ordenar por menos externos (distribuição justa)
+      eligibleBrokers.sort((a, b) => a.externalShiftCount - b.externalShiftCount);
+      
+      let allocated = false;
+      for (const broker of eligibleBrokers) {
+        // Verificar apenas regras invioláveis (construtora, etc.) mas relaxar consecutivos e gate
+        const checkResult = checkTrulyInviolableRulesWithRelaxation(broker, demand, context, true);
+        if (checkResult.allowed) {
+          allocateDemand(demand, broker, context);
+          allocatedDemands.add(demandKey);
+          relaxedAllocations.push({
+            demand: `${demand.locationName} ${demand.dateStr} ${demand.shift}`,
+            pass: 10,
+            reason: `PASSE FINAL: ${broker.brokerName} (regras de consecutivos/gate relaxadas)`
           });
-        });
-        
-        if (externalEligible.length > 0) {
-          const globalMin = Math.min(...externalEligible.map(b => b.externalShiftCount));
-          if (globalMin < finalLevel - 1) {
-            console.log(`   🚫 ETAPA 8.11 GATE NÍVEL ${finalLevel}: globalMin=${globalMin} < ${finalLevel - 1} — pulando`);
-            continue;
-          }
-          console.log(`   ✅ ETAPA 8.11 GATE NÍVEL ${finalLevel} OK: globalMin=${globalMin}`);
+          console.log(`   🚑 ${demand.locationName} ${demand.dateStr} ${demand.shift} → ${broker.brokerName} (passe final)`);
+          allocated = true;
+          break;
         }
       }
       
-      for (const demand of pendingNow) {
-        const demandKey = `${demand.locationId}-${demand.dateStr}-${demand.shift}`;
-        if (allocatedDemands.has(demandKey)) continue;
-        
-        const eligibleBrokers = context.brokerQueue.filter(b => {
-          if (!demand.eligibleBrokerIds.includes(b.brokerId)) return false;
-          if (!b.availableWeekdays.includes(demand.dayOfWeek)) return false;
-          if (b.externalShiftCount >= finalLevel) return false;
-          if (b.externalShiftCount >= MAX_EXTERNAL_SHIFTS_HARD_CAP) return false;
-          return true;
-        });
-        
-        eligibleBrokers.sort((a, b) => a.externalShiftCount - b.externalShiftCount);
-        
-        for (const broker of eligibleBrokers) {
-          const checkResult = checkTrulyInviolableRulesWithRelaxation(broker, demand, context, true);
-          if (checkResult.allowed) {
-            allocateDemand(demand, broker, context);
-            allocatedDemands.add(demandKey);
-            relaxedAllocations.push({
-              demand: `${demand.locationName} ${demand.dateStr} ${demand.shift}`,
-              pass: 10,
-              reason: `PASSE FINAL NÍVEL ${finalLevel}: ${broker.brokerName} (${broker.externalShiftCount} externos)`
-            });
-            console.log(`   🚑 ${demand.locationName} ${demand.dateStr} ${demand.shift} → ${broker.brokerName} (nível ${finalLevel}, ${broker.externalShiftCount} externos)`);
-            break;
-          }
-        }
+      if (!allocated) {
+        console.log(`   ❌ ${demand.locationName} ${demand.dateStr} ${demand.shift}: IMPOSSÍVEL alocar mesmo com relaxamento`);
       }
     }
-    
-    // Verificar se ainda há pendentes
-    const stillPending = preEmergencyUnallocated.filter(d => 
-      !allocatedDemands.has(`${d.locationId}-${d.dateStr}-${d.shift}`)
-    );
-    for (const demand of stillPending) {
-      console.log(`   ❌ ${demand.locationName} ${demand.dateStr} ${demand.shift}: IMPOSSÍVEL alocar mesmo com relaxamento`);
-    }
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  // ETAPA 8.12: REBALANCEAMENTO FINAL PÓS-EMERGÊNCIA
-  // Rodar novamente após ETAPA 8.11 para corrigir desequilíbrios criados
-  // ═══════════════════════════════════════════════════════════
-  console.log("\n⚖️ ETAPA 8.12: REBALANCEAMENTO FINAL PÓS-EMERGÊNCIA...");
-  const finalRebalance = rebalanceDistributionViaSwaps(context, possibleDemands, allocatedDemands, internalLocIds, relaxedAllocations);
-  if (finalRebalance.swapsSuccessful > 0) {
-    console.log(`   ✅ Rebalanceamento final: ${finalRebalance.swapsSuccessful} trocas realizadas`);
-  }
-  
-  // Log distribuição final
-  const finalDistribution = new Map<number, string[]>();
-  for (const broker of context.brokerQueue.filter(b => b.externalLocationCount > 0)) {
-    if (!finalDistribution.has(broker.externalShiftCount)) {
-      finalDistribution.set(broker.externalShiftCount, []);
-    }
-    finalDistribution.get(broker.externalShiftCount)!.push(broker.brokerName);
-  }
-  console.log(`   📊 DISTRIBUIÇÃO FINAL DE EXTERNOS:`);
-  for (const [count, names] of [...finalDistribution.entries()].sort((a, b) => a[0] - b[0])) {
-    console.log(`      ${count} externos: ${names.join(', ')}`);
   }
 
   // Relatório de qualidade
@@ -4646,8 +4053,6 @@ async function generateWeeklyScheduleWithAccumulator(
   console.log(`📋 Total de demandas externas: ${possibleDemands.length}`);
   console.log(`✅ Pass 1-5: ${allocatedPass1 + allocatedPass2 + allocatedPass3 + allocatedPass4 + allocatedPass5}`);
   console.log(`🔄 De-consecutivização: ${deConsecutiveResult.swapsSuccessful} swaps`);
-  console.log(`🔗 Chain swaps: ${chainSwapResult.swapsSuccessful}/${chainSwapResult.swapsAttempted}`);
-  console.log(`⚖️ Rebalanceamento: ${rebalanceResult.swapsSuccessful}/${rebalanceResult.swapsAttempted}`);
   console.log(`⚠️ Regras relaxadas: ${relaxedAllocations.length}`);
   console.log(`❌ Não alocadas: ${finalUnallocated.length}`);
 
