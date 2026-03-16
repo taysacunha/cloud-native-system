@@ -3011,6 +3011,17 @@ async function generateWeeklyScheduleWithAccumulator(
   // Mapear demandas externas
   console.log("\n📍 ETAPA 1: MAPEANDO DEMANDAS EXTERNAS...");
 
+  // Mapa de exclusões de elegibilidade por corretor
+  const eligibilityExclusionMap = new Map<string, {
+    brokerId: string;
+    brokerName: string;
+    totalDemands: number;
+    eligible: number;
+    excluded: number;
+    byReason: Record<string, number>;
+    details: { locationName: string; dateStr: string; shift: string; reason: string }[];
+  }>();
+
   const allExternalDemands: ExternalDemand[] = [];
 
   // ═══════════════════════════════════════════════════════════
