@@ -1157,6 +1157,97 @@ function ForensicView({
 }
 
 // ═══════════════════════════════════════════════════════════
+// ELIGIBILITY VIEW — Vínculos Externos por Corretor
+// ═══════════════════════════════════════════════════════════
+function EligibilityView({ eligibilityMap, expanded, toggleExpanded, searchBroker }: {
+  eligibilityMap: BrokerExternalEligibility[];
+  expanded: Set<string>;
+  toggleExpanded: (id: string) => void;
+  searchBroker: string;
+}) {
+  const filtered = eligibilityMap.filter(b =>
+    !searchBroker || b.brokerName.toLowerCase().includes(searchBroker.toLowerCase())
+  );
+
+  if (filtered.length === 0) {
+    return <div className="text-sm text-muted-foreground p-4">Nenhum corretor com vínculos externos encontrado.</div>;
+  }
+
+  return (
+    <div className="space-y-2">
+      {filtered.map(broker => {
+        const isUnder = broker.finalExternalCount < broker.targetExternals;
+        const isExpanded = expanded.has(broker.brokerId);
+
+        return (
+          <Collapsible key={broker.brokerId} open={isExpanded} onOpenChange={() => toggleExpanded(broker.brokerId)}>
+            <CollapsibleTrigger asChild>
+              <div className={`flex items-center gap-2 p-2 rounded cursor-pointer hover:bg-accent/50 border ${isUnder ? "border-destructive/40 bg-destructive/5" : "border-border"}`}>
+                {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                <User className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="font-medium text-sm">{broker.brokerName}</span>
+                <Badge variant={isUnder ? "destructive" : "secondary"} className="text-xs ml-auto">
+                  {broker.finalExternalCount}/{broker.targetExternals} ext
+                </Badge>
+                <Badge variant="outline" className="text-xs">
+                  {broker.linkedLocationCount} locais
+                </Badge>
+                <Badge variant="outline" className="text-xs">
+                  {broker.totalEligibleDemands} elegíveis
+                </Badge>
+                {broker.totalExcludedDemands > 0 && (
+                  <Badge variant="outline" className="text-xs text-amber-600">
+                    {broker.totalExcludedDemands} excluídos
+                  </Badge>
+                )}
+              </div>
+            </CollapsibleTrigger>
+            <CollapsibleContent>
+              <div className="ml-6 mt-1 space-y-2 pb-2">
+                {broker.locations.map(loc => (
+                  <div key={loc.locationId} className="border rounded p-2 bg-card">
+                    <div className="flex items-center gap-2 mb-1">
+                      <MapPin className="h-3 w-3 text-muted-foreground" />
+                      <span className="text-sm font-medium">{loc.locationName}</span>
+                      <Badge variant="outline" className="text-[10px]">
+                        {loc.eligible.length} elegíveis
+                      </Badge>
+                      {loc.excluded.length > 0 && (
+                        <Badge variant="outline" className="text-[10px] text-amber-600">
+                          {loc.excluded.length} excluídos
+                        </Badge>
+                      )}
+                    </div>
+                    {loc.eligible.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {loc.eligible.map((e, i) => (
+                          <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+                            {e.dateStr} {e.shift === "morning" ? "M" : "T"}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {loc.excluded.length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {loc.excluded.map((e, i) => (
+                          <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800" title={e.reason}>
+                            {e.dateStr} {e.shift === "morning" ? "M" : "T"} — {e.reason}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+        );
+      })}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════
 function RuleExplanationBadge({ rule }: { rule: string }) {
   const explanation = getRuleExplanation(rule);
   if (!explanation) return null;
