@@ -4264,8 +4264,8 @@ async function generateWeeklyScheduleWithAccumulator(
                     if (!broker) continue;
                     const reasons: string[] = [];
                     if (broker.externalShiftCount >= MAX_EXTERNAL_SHIFTS_HARD_CAP) reasons.push(`HARD CAP (${broker.externalShiftCount})`);
-                    const invCheck = checkTrulyInviolableRulesWithRelaxation(broker, demand, context, true);
-                    if (!invCheck.allowed) reasons.push(invCheck.reason);
+                    const fullCheck = isBrokerTrulyEligibleForDemand(broker, demand, context);
+                    if (!fullCheck.allowed) reasons.push(`${fullCheck.rule}: ${fullCheck.reason}`);
                     console.log(`         - ${broker.brokerName} (${broker.externalShiftCount} ext): ${reasons.join('; ') || 'desconhecido'}`);
                   }
                 }
