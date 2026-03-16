@@ -382,6 +382,17 @@ export function ValidationReportPanel({ result, onClose, brokerDiagnostics, elig
                   Por que não alocou
                 </Button>
               )}
+              {subAllocatedForensics && subAllocatedForensics.length > 0 && (
+                <Button
+                  variant={viewMode === "forensic" ? "default" : "outline"}
+                  size="sm"
+                  className="h-7 text-xs gap-1"
+                  onClick={() => setViewMode("forensic")}
+                >
+                  <Search className="h-3 w-3" />
+                  Forense
+                </Button>
+              )}
             </div>
             <div className="flex gap-1">
               {hasActiveFilters && (
