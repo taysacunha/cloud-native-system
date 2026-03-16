@@ -801,6 +801,34 @@ function checkTrulyInviolableRulesWithRelaxation(
 
 // ═══════════════════════════════════════════════════════════
 // VERIFICA SE PODE EXCEDER O LIMITE DE 2 EXTERNOS
+// ═══════════════════════════════════════════════════════════
+// HELPER UNIFICADO: Verifica se um corretor REALMENTE pode receber uma demanda
+// Combina checkAbsoluteRules + checkTrulyInviolableRulesWithRelaxation
+// Elimina "possibilidades fantasma" onde o gate global fica ativo
+// mas nenhum corretor é realmente elegível
+// ═══════════════════════════════════════════════════════════
+function isBrokerTrulyEligibleForDemand(
+  broker: BrokerQueueItem,
+  demand: ExternalDemand,
+  context: AllocationContext,
+  pass: number = 5
+): { allowed: boolean; reason: string; rule: string } {
+  // 1. Verificar regras absolutas (Regra 4: conflito local, Regra 5: dois turnos, etc.)
+  const absCheck = checkAbsoluteRules(broker, demand, context, pass);
+  if (!absCheck.allowed) {
+    return absCheck;
+  }
+  
+  // 2. Verificar regras invioláveis com relaxamento de Regra 8
+  const relaxCheck = checkTrulyInviolableRulesWithRelaxation(broker, demand, context, true);
+  if (!relaxCheck.allowed) {
+    return { allowed: false, reason: relaxCheck.reason, rule: relaxCheck.rule || "REGRA_RELAXADA" };
+  }
+  
+  return { allowed: true, reason: "", rule: "" };
+}
+
+// ═══════════════════════════════════════════════════════════
 // Retorna true APENAS se TODOS os elegíveis já têm 2 ou estão bloqueados
 // ═══════════════════════════════════════════════════════════
 function canExceedLimit(
@@ -813,8 +841,8 @@ function canExceedLimit(
     
     // Se algum corretor elegível tem menos de 2 externos E pode receber esta demanda
     if (broker.externalShiftCount < MAX_EXTERNAL_SHIFTS_PER_WEEK) {
-      // Usar helper unificado COM relaxamento de Regra 8 (corretor com <2 pode ter consecutivo)
-      const check = checkTrulyInviolableRulesWithRelaxation(broker, demand, context, true);
+      // Usar helper UNIFICADO que verifica TODAS as regras (absolutas + relaxadas)
+      const check = isBrokerTrulyEligibleForDemand(broker, demand, context);
       if (check.allowed) {
         // Ainda há corretor com menos de 2 que pode receber
         return false;
@@ -822,7 +850,7 @@ function canExceedLimit(
     }
   }
   
-  // Todos os elegíveis já têm 2 ou estão bloqueados por regras invioláveis
+  // Todos os elegíveis já têm 2 ou estão bloqueados por regras reais
   return true;
 }
 
@@ -869,10 +897,15 @@ function canAnyoneStillReachTwo(
       // Sábado externo com 1+ externos
       if (demand.dayOfWeek === "saturday" && broker.externalShiftCount >= 1) continue;
       
-      const check = checkTrulyInviolableRulesWithRelaxation(broker, demand, context, true);
+      // CORREÇÃO: Usar helper UNIFICADO que verifica TODAS as regras reais
+      // Antes: só checkTrulyInviolableRulesWithRelaxation (ignorava checkAbsoluteRules)
+      // Agora: verifica absolute + relaxed, eliminando "possibilidade fantasma"
+      const check = isBrokerTrulyEligibleForDemand(broker, demand, context);
       if (check.allowed) {
         canReceiveAny = true;
         break;
+      } else {
+        console.log(`   📊 GATE: ${broker.brokerName} NÃO pode ${demand.locationName} ${demand.dateStr} ${demand.shift}: ${check.rule} - ${check.reason}`);
       }
     }
     
@@ -3962,8 +3995,8 @@ async function generateWeeklyScheduleWithAccumulator(
             if (!broker || broker.externalShiftCount >= MAX_EXTERNAL_SHIFTS_HARD_CAP) continue;
             if (!demand.eligibleBrokerIds.includes(broker.brokerId)) continue;
             
-            // Tentar com Regra 8 relaxada
-            const check = checkTrulyInviolableRulesWithRelaxation(broker, demand, context, true);
+            // CORREÇÃO: Usar helper UNIFICADO (absolute + relaxed)
+            const check = isBrokerTrulyEligibleForDemand(broker, demand, context);
             if (!check.allowed) continue;
             
             allocateDemand(demand, broker, context);
@@ -4009,7 +4042,8 @@ async function generateWeeklyScheduleWithAccumulator(
               .sort((a, b) => a.externalShiftCount - b.externalShiftCount);
             
             for (const broker of compensationBrokers) {
-              const check = checkTrulyInviolableRulesWithRelaxation(broker, demand, context, true);
+              // CORREÇÃO: Usar helper UNIFICADO (absolute + relaxed)
+              const check = isBrokerTrulyEligibleForDemand(broker, demand, context);
               if (!check.allowed) continue;
               
               allocateDemand(demand, broker, context);
@@ -4076,7 +4110,8 @@ async function generateWeeklyScheduleWithAccumulator(
                   continue;
                 }
                 
-                const check = checkTrulyInviolableRulesWithRelaxation(broker, demand, context, true);
+                // CORREÇÃO: Usar helper UNIFICADO (absolute + relaxed)
+                const check = isBrokerTrulyEligibleForDemand(broker, demand, context);
                 if (!check.allowed) continue;
                 
                 const wasOverLimit = broker.externalShiftCount >= MAX_EXTERNAL_SHIFTS_PER_WEEK;
@@ -4115,8 +4150,8 @@ async function generateWeeklyScheduleWithAccumulator(
                 if (!broker || broker.externalShiftCount >= MAX_EXTERNAL_SHIFTS_PER_WEEK) continue;
                 if (!demand.eligibleBrokerIds.includes(broker.brokerId)) continue;
                 
-                // Verificar TODAS as regras reais (com relaxamento de Regra 8)
-                const check = checkTrulyInviolableRulesWithRelaxation(broker, demand, context, true);
+                // CORREÇÃO: Usar helper UNIFICADO (absolute + relaxed) — evita possibilidade fantasma
+                const check = isBrokerTrulyEligibleForDemand(broker, demand, context);
                 if (!check.allowed) continue;
                 
                 // Este under-two PODE realmente pegar esta demanda
@@ -4176,7 +4211,8 @@ async function generateWeeklyScheduleWithAccumulator(
                   
                   if (broker.externalShiftCount >= MAX_EXTERNAL_SHIFTS_HARD_CAP) continue;
                   
-                  const check = checkTrulyInviolableRulesWithRelaxation(broker, demand, context, true);
+                  // CORREÇÃO: Usar helper UNIFICADO (absolute + relaxed)
+                  const check = isBrokerTrulyEligibleForDemand(broker, demand, context);
                   if (!check.allowed) continue;
                   
                   const wasOverLimit = broker.externalShiftCount >= MAX_EXTERNAL_SHIFTS_PER_WEEK;
