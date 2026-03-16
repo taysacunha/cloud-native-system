@@ -3598,6 +3598,93 @@ async function generateWeeklyScheduleWithAccumulator(
   }
 
   // ═══════════════════════════════════════════════════════════
+  // ETAPA 8.7: RESGATE BROKER-FIRST — PASSADA EXTRA PARA SUB-ALOCADOS
+  // Diferente da 8.6: itera CORRETORES primeiro, depois demandas
+  // Ordena demandas por ESCASSEZ (menos elegíveis = mais urgente)
+  // Aplica regras mínimas para maximizar chance de alocação
+  // ═══════════════════════════════════════════════════════════
+  const unallocatedAfterRebalance = possibleDemands.filter(d => 
+    !allocatedDemands.has(`${d.locationId}-${d.dateStr}-${d.shift}`)
+  );
+  
+  const brokersStillUnderTarget = context.brokerQueue
+    .filter(b => b.externalShiftCount < b.targetExternals && b.externalShiftCount < MAX_EXTERNAL_SHIFTS_PER_WEEK)
+    .sort((a, b) => {
+      // Priorizar quem tem MENOS externos primeiro
+      if (a.externalShiftCount !== b.externalShiftCount) return a.externalShiftCount - b.externalShiftCount;
+      // Depois quem tem MENOS locais configurados (menos oportunidades)
+      return a.externalLocationCount - b.externalLocationCount;
+    });
+  
+  if (brokersStillUnderTarget.length > 0 && unallocatedAfterRebalance.length > 0) {
+    console.log(`\n🚀 ETAPA 8.7: RESGATE BROKER-FIRST — ${brokersStillUnderTarget.length} corretores sub-alocados, ${unallocatedAfterRebalance.length} demandas disponíveis`);
+    
+    let rescueCount = 0;
+    
+    for (const underBroker of brokersStillUnderTarget) {
+      if (underBroker.externalShiftCount >= underBroker.targetExternals) continue;
+      if (underBroker.externalShiftCount >= MAX_EXTERNAL_SHIFTS_PER_WEEK) continue;
+      
+      // Ordenar demandas não alocadas por ESCASSEZ (menos elegíveis primeiro)
+      // Isso garante que as demandas mais difíceis sejam preenchidas antes
+      const demandsByScarcity = [...unallocatedAfterRebalance]
+        .filter(d => {
+          const dk = `${d.locationId}-${d.dateStr}-${d.shift}`;
+          return !allocatedDemands.has(dk) && d.eligibleBrokerIds.includes(underBroker.brokerId);
+        })
+        .sort((a, b) => a.eligibleBrokerIds.length - b.eligibleBrokerIds.length);
+      
+      for (const demand of demandsByScarcity) {
+        const demandKey = `${demand.locationId}-${demand.dateStr}-${demand.shift}`;
+        if (allocatedDemands.has(demandKey)) continue;
+        if (underBroker.externalShiftCount >= underBroker.targetExternals) break;
+        
+        // Verificar dia disponível
+        if (!underBroker.availableWeekdays.includes(demand.dayOfWeek)) continue;
+        
+        // Verificar regras invioláveis (com Regra 8 relaxada para <2 externos)
+        const check = checkTrulyInviolableRulesWithRelaxation(underBroker, demand, context, underBroker.externalShiftCount < 2);
+        if (!check.allowed) {
+          console.log(`   ⛔ RESGATE: ${underBroker.brokerName} bloqueado para ${demand.locationName} ${demand.dateStr} ${demand.shift}: ${check.reason}`);
+          continue;
+        }
+        
+        // Verificar regras absolutas com pass alto para relaxar o máximo possível
+        const absCheck = checkAbsoluteRules(underBroker, demand, context, 5);
+        if (!absCheck.allowed) {
+          console.log(`   ⛔ RESGATE ABS: ${underBroker.brokerName} bloqueado: ${absCheck.reason}`);
+          continue;
+        }
+        
+        // ALOCAR!
+        allocateDemand(demand, underBroker, context);
+        allocatedDemands.add(demandKey);
+        rescueCount++;
+        console.log(`   ✅ RESGATE: ${demand.locationName} ${demand.dateStr} ${demand.shift} → ${underBroker.brokerName} (agora tem ${underBroker.externalShiftCount} externos, escassez: ${demand.eligibleBrokerIds.length} elegíveis)`);
+      }
+    }
+    
+    if (rescueCount > 0) {
+      console.log(`   📊 Resgate broker-first: ${rescueCount} alocações adicionais`);
+    } else {
+      console.log(`   📊 Resgate broker-first: nenhuma alocação possível`);
+      // Log detalhado de por que não foi possível
+      for (const underBroker of brokersStillUnderTarget.slice(0, 5)) {
+        if (underBroker.externalShiftCount >= underBroker.targetExternals) continue;
+        const eligibleDemands = unallocatedAfterRebalance.filter(d => 
+          !allocatedDemands.has(`${d.locationId}-${d.dateStr}-${d.shift}`) && 
+          d.eligibleBrokerIds.includes(underBroker.brokerId)
+        );
+        if (eligibleDemands.length === 0) {
+          console.log(`   📋 ${underBroker.brokerName}: NENHUMA demanda não-alocada onde é elegível`);
+        } else {
+          console.log(`   📋 ${underBroker.brokerName}: ${eligibleDemands.length} demandas não-alocadas elegíveis mas bloqueado por regras`);
+        }
+      }
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
   // ETAPA 8.8: DESCONSECUTIVAR (antes do último recurso)
   // ═══════════════════════════════════════════════════════════
   const deConsecutiveResult = deConsecutivizeExternals(context, possibleDemands, internalLocIds);
