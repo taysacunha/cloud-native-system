@@ -3328,6 +3328,12 @@ async function generateWeeklyScheduleWithAccumulator(
   // DECISION TRACE: Captura em tempo real de cada decisão de alocação
   // ═══════════════════════════════════════════════════════════
   const decisionTrace: DecisionTraceEntry[] = [];
+  
+  // ═══════════════════════════════════════════════════════════
+  // RASTREIO FORENSE: Competição para corretores sub-alocados
+  // Para cada demanda, registra o que aconteceu com cada corretor elegível
+  // ═══════════════════════════════════════════════════════════
+  const competitionLog: Map<string, CompetitionTraceEntry[]> = new Map();
 
   // Pass 1-5: Alocação normal
   for (let pass = 1; pass <= 5; pass++) {
