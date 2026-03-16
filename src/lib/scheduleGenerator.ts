@@ -3978,14 +3978,10 @@ async function generateWeeklyScheduleWithAccumulator(
         // Só aceitar corretor com menos de 2 neste passo
         if (broker.externalShiftCount >= MAX_EXTERNAL_SHIFTS_PER_WEEK) continue;
         
-        // CORRIGIDO: true = relaxar Regra 8 (consecutivos) para corretores com <2 externos na etapa de emergência
-        const check = checkTrulyInviolableRulesWithRelaxation(broker, demand, context, true);
-        if (!check.allowed) continue;
-        
-        // Verificar regras absolutas (Regra 4, 5, etc.)
-        const absCheck = checkAbsoluteRules(broker, demand, context, 5);
-        if (!absCheck.allowed) {
-          console.log(`   ⛔ ETAPA 9 PASSO 1: ${broker.brokerName} bloqueado para ${demand.locationName} ${demand.dateStr} ${demand.shift}: ${absCheck.reason}`);
+        // CORREÇÃO: Usar helper UNIFICADO (todas as regras operacionais + absolutas + relaxadas)
+        const check = isBrokerTrulyEligibleForDemand(broker, demand, context);
+        if (!check.allowed) {
+          console.log(`   ⛔ ETAPA 9 PASSO 1: ${broker.brokerName} bloqueado para ${demand.locationName} ${demand.dateStr} ${demand.shift}: ${check.rule} - ${check.reason}`);
           continue;
         }
         
