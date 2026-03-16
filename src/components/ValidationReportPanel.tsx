@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { PostValidationResult, BrokerValidationReport, PostValidationViolation, UnallocatedDemand } from "@/lib/schedulePostValidation";
-import { BrokerAllocationDiagnostic, EligibilityExclusion, SubAllocatedForensic } from "@/lib/generationTrace";
+import { BrokerAllocationDiagnostic, EligibilityExclusion, SubAllocatedForensic, BrokerExternalEligibility } from "@/lib/generationTrace";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,7 +20,8 @@ import {
   Filter,
   LayoutList,
   Layers,
-  HelpCircle
+  HelpCircle,
+  Link2
 } from "lucide-react";
 
 interface ValidationReportPanelProps {
@@ -29,10 +30,11 @@ interface ValidationReportPanelProps {
   brokerDiagnostics?: BrokerAllocationDiagnostic[];
   eligibilityExclusions?: EligibilityExclusion[];
   subAllocatedForensics?: SubAllocatedForensic[];
+  brokerEligibilityMap?: BrokerExternalEligibility[];
 }
 
 type SeverityFilter = "all" | "error" | "warning";
-type ViewMode = "broker" | "rule" | "diagnostic" | "forensic";
+type ViewMode = "broker" | "rule" | "diagnostic" | "forensic" | "eligibility";
 
 // ═══════════════════════════════════════════════════════════
 // RULE EXPLANATIONS MAP

@@ -2271,6 +2271,7 @@ const Schedules = () => {
                 brokerDiagnostics={getLastGenerationTrace()?.brokerDiagnostics}
                 eligibilityExclusions={getLastGenerationTrace()?.eligibilityExclusions}
                 subAllocatedForensics={getLastGenerationTrace()?.subAllocatedForensics}
+                brokerEligibilityMap={getLastGenerationTrace()?.brokerEligibilityMap}
               />
             </div>
           ) : (
