@@ -3429,6 +3429,13 @@ async function generateWeeklyScheduleWithAccumulator(
         const check = checkTrulyInviolableRulesWithRelaxation(underBroker, demand, context, true);
         if (!check.allowed) continue;
         
+        // Verificar regras absolutas (Regra 4: conflito local externo, Regra 5: mesmo local, etc.)
+        const absCheck = checkAbsoluteRules(underBroker, demand, context, 5);
+        if (!absCheck.allowed) {
+          console.log(`   ⛔ REBALANCEAMENTO: ${underBroker.brokerName} bloqueado: ${absCheck.reason}`);
+          continue;
+        }
+        
         // ALOCAR!
         allocateDemand(demand, underBroker, context);
         allocatedDemands.add(demandKey);
@@ -3513,6 +3520,13 @@ async function generateWeeklyScheduleWithAccumulator(
           // Check inviolable rules for the underloaded broker
           const check = checkTrulyInviolableRulesWithRelaxation(underBroker, demandForCheck, context, true);
           if (!check.allowed) continue;
+          
+          // Verificar regras absolutas (Regra 4, 5, construtora, etc.)
+          const absCheck = checkAbsoluteRules(underBroker, demandForCheck, context, 5);
+          if (!absCheck.allowed) {
+            console.log(`   ⛔ CHAIN SWAP: ${underBroker.brokerName} bloqueado: ${absCheck.reason}`);
+            continue;
+          }
           
           // Check the underloaded broker doesn't already have an external on this day
           const underBrokerHasExternalOnDay = context.assignments.some(a => 
@@ -3907,8 +3921,16 @@ async function generateWeeklyScheduleWithAccumulator(
         // Só aceitar corretor com menos de 2 neste passo
         if (broker.externalShiftCount >= MAX_EXTERNAL_SHIFTS_HARD_CAP) continue;
         
-        const check = checkTrulyInviolableRulesWithRelaxation(broker, demand, context, false);
+        // CORRIGIDO: true = relaxar Regra 8 (consecutivos) para corretores com <2 externos na etapa de emergência
+        const check = checkTrulyInviolableRulesWithRelaxation(broker, demand, context, true);
         if (!check.allowed) continue;
+        
+        // Verificar regras absolutas (Regra 4, 5, etc.)
+        const absCheck = checkAbsoluteRules(broker, demand, context, 5);
+        if (!absCheck.allowed) {
+          console.log(`   ⛔ ETAPA 9 PASSO 1: ${broker.brokerName} bloqueado para ${demand.locationName} ${demand.dateStr} ${demand.shift}: ${absCheck.reason}`);
+          continue;
+        }
         
         allocateDemand(demand, broker, context);
         allocatedDemands.add(demandKey);
