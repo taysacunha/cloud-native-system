@@ -4609,10 +4609,25 @@ async function generateWeeklyScheduleWithAccumulator(
     }
   }
   
+  // Converter mapa de exclusões para array final
+  const eligibilityExclusions: EligibilityExclusion[] = Array.from(eligibilityExclusionMap.values())
+    .filter(e => e.excluded > 0)
+    .map(e => ({
+      brokerId: e.brokerId,
+      brokerName: e.brokerName,
+      totalDemandsInLinkedLocations: e.totalDemands,
+      eligibleCount: e.eligible,
+      excludedCount: e.excluded,
+      exclusionsByReason: e.byReason,
+      exclusionDetails: e.details
+    }))
+    .sort((a, b) => b.excludedCount - a.excludedCount);
+
   // Salvar trace no módulo para acesso externo
   setLastGenerationTrace({
     decisionTrace,
-    brokerDiagnostics
+    brokerDiagnostics,
+    eligibilityExclusions
   });
 
   console.log(`\n🎉 TOTAL DE ALOCAÇÕES: ${assignments.length}`);
