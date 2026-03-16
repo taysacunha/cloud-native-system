@@ -17,8 +17,8 @@ import {
   LocationRotationQueueItem,
 } from "@/hooks/useLocationRotationQueue";
 import { validateAllRulesCompliance, logViolations, RuleViolation } from "./scheduleValidator";
-import { DecisionTraceEntry, BrokerAllocationDiagnostic, EligibilityExclusion, CompetitionTraceEntry, SubAllocatedForensic, setLastGenerationTrace } from "./generationTrace";
-export type { DecisionTraceEntry, BrokerAllocationDiagnostic, EligibilityExclusion };
+import { DecisionTraceEntry, BrokerAllocationDiagnostic, EligibilityExclusion, CompetitionTraceEntry, SubAllocatedForensic, BrokerExternalEligibility, BrokerLocationEligibility, setLastGenerationTrace } from "./generationTrace";
+export type { DecisionTraceEntry, BrokerAllocationDiagnostic, EligibilityExclusion, BrokerExternalEligibility };
 export { getLastGenerationTrace } from "./generationTrace";
 
 // ═══════════════════════════════════════════════════════════
@@ -3211,6 +3211,69 @@ async function generateWeeklyScheduleWithAccumulator(
 
   console.log(`📋 Total: ${allExternalDemands.length} demandas externas`);
 
+  // ═══════════════════════════════════════════════════════════
+  // CONSTRUIR MAPA BROKER-CÊNTRICO DE ELEGIBILIDADE
+  // Para cada corretor, quais locais externos ele está vinculado
+  // e para quais demandas (dia/turno) ele é elegível ou excluído
+  // ═══════════════════════════════════════════════════════════
+  const brokerEligibilityBuilder = new Map<string, {
+    brokerId: string;
+    brokerName: string;
+    locations: Map<string, BrokerLocationEligibility>;
+  }>();
+  
+  // Inicializar com todos os corretores que têm vínculos externos
+  for (const location of externalLocations || []) {
+    for (const lb of location.location_brokers || []) {
+      const brokerId = lb.broker_id;
+      const brokerName = lb.brokers?.name || brokerId;
+      if (!brokerEligibilityBuilder.has(brokerId)) {
+        brokerEligibilityBuilder.set(brokerId, {
+          brokerId,
+          brokerName,
+          locations: new Map()
+        });
+      }
+      const builder = brokerEligibilityBuilder.get(brokerId)!;
+      if (!builder.locations.has(location.id)) {
+        builder.locations.set(location.id, {
+          locationId: location.id,
+          locationName: location.name,
+          eligible: [],
+          excluded: []
+        });
+      }
+    }
+  }
+  
+  // Preencher com dados das demandas
+  for (const demand of allExternalDemands) {
+    for (const [brokerId, builder] of brokerEligibilityBuilder) {
+      const locEntry = builder.locations.get(demand.locationId);
+      if (!locEntry) continue; // Não vinculado a este local
+      
+      if (demand.eligibleBrokerIds.includes(brokerId)) {
+        locEntry.eligible.push({
+          dateStr: demand.dateStr,
+          shift: demand.shift,
+          dayOfWeek: demand.dayOfWeek
+        });
+      } else {
+        // Buscar motivo da exclusão no mapa de exclusões
+        const exclEntry = eligibilityExclusionMap.get(brokerId);
+        const detail = exclEntry?.details.find(d => 
+          d.locationName === demand.locationName && d.dateStr === demand.dateStr && d.shift === demand.shift
+        );
+        locEntry.excluded.push({
+          dateStr: demand.dateStr,
+          shift: demand.shift,
+          dayOfWeek: demand.dayOfWeek,
+          reason: detail?.reason || "Sem disponibilidade para este dia/turno"
+        });
+      }
+    }
+  }
+
   // Log de exclusões de elegibilidade
   const brokersWithExclusions = Array.from(eligibilityExclusionMap.values()).filter(e => e.excluded > 0);
   if (brokersWithExclusions.length > 0) {
@@ -3531,6 +3594,93 @@ async function generateWeeklyScheduleWithAccumulator(
     console.log(`\n   ⚠️ Corretores com menos de 2 externos:`);
     for (const broker of context.brokerQueue.filter(b => b.externalShiftCount < 2)) {
       console.log(`      - ${broker.brokerName}: ${broker.externalShiftCount} externos (${broker.externalLocationCount} locais configurados)`);
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // ETAPA 8.7: RESGATE BROKER-FIRST — PASSADA EXTRA PARA SUB-ALOCADOS
+  // Diferente da 8.6: itera CORRETORES primeiro, depois demandas
+  // Ordena demandas por ESCASSEZ (menos elegíveis = mais urgente)
+  // Aplica regras mínimas para maximizar chance de alocação
+  // ═══════════════════════════════════════════════════════════
+  const unallocatedAfterRebalance = possibleDemands.filter(d => 
+    !allocatedDemands.has(`${d.locationId}-${d.dateStr}-${d.shift}`)
+  );
+  
+  const brokersStillUnderTarget = context.brokerQueue
+    .filter(b => b.externalShiftCount < b.targetExternals && b.externalShiftCount < MAX_EXTERNAL_SHIFTS_PER_WEEK)
+    .sort((a, b) => {
+      // Priorizar quem tem MENOS externos primeiro
+      if (a.externalShiftCount !== b.externalShiftCount) return a.externalShiftCount - b.externalShiftCount;
+      // Depois quem tem MENOS locais configurados (menos oportunidades)
+      return a.externalLocationCount - b.externalLocationCount;
+    });
+  
+  if (brokersStillUnderTarget.length > 0 && unallocatedAfterRebalance.length > 0) {
+    console.log(`\n🚀 ETAPA 8.7: RESGATE BROKER-FIRST — ${brokersStillUnderTarget.length} corretores sub-alocados, ${unallocatedAfterRebalance.length} demandas disponíveis`);
+    
+    let rescueCount = 0;
+    
+    for (const underBroker of brokersStillUnderTarget) {
+      if (underBroker.externalShiftCount >= underBroker.targetExternals) continue;
+      if (underBroker.externalShiftCount >= MAX_EXTERNAL_SHIFTS_PER_WEEK) continue;
+      
+      // Ordenar demandas não alocadas por ESCASSEZ (menos elegíveis primeiro)
+      // Isso garante que as demandas mais difíceis sejam preenchidas antes
+      const demandsByScarcity = [...unallocatedAfterRebalance]
+        .filter(d => {
+          const dk = `${d.locationId}-${d.dateStr}-${d.shift}`;
+          return !allocatedDemands.has(dk) && d.eligibleBrokerIds.includes(underBroker.brokerId);
+        })
+        .sort((a, b) => a.eligibleBrokerIds.length - b.eligibleBrokerIds.length);
+      
+      for (const demand of demandsByScarcity) {
+        const demandKey = `${demand.locationId}-${demand.dateStr}-${demand.shift}`;
+        if (allocatedDemands.has(demandKey)) continue;
+        if (underBroker.externalShiftCount >= underBroker.targetExternals) break;
+        
+        // Verificar dia disponível
+        if (!underBroker.availableWeekdays.includes(demand.dayOfWeek)) continue;
+        
+        // Verificar regras invioláveis (com Regra 8 relaxada para <2 externos)
+        const check = checkTrulyInviolableRulesWithRelaxation(underBroker, demand, context, underBroker.externalShiftCount < 2);
+        if (!check.allowed) {
+          console.log(`   ⛔ RESGATE: ${underBroker.brokerName} bloqueado para ${demand.locationName} ${demand.dateStr} ${demand.shift}: ${check.reason}`);
+          continue;
+        }
+        
+        // Verificar regras absolutas com pass alto para relaxar o máximo possível
+        const absCheck = checkAbsoluteRules(underBroker, demand, context, 5);
+        if (!absCheck.allowed) {
+          console.log(`   ⛔ RESGATE ABS: ${underBroker.brokerName} bloqueado: ${absCheck.reason}`);
+          continue;
+        }
+        
+        // ALOCAR!
+        allocateDemand(demand, underBroker, context);
+        allocatedDemands.add(demandKey);
+        rescueCount++;
+        console.log(`   ✅ RESGATE: ${demand.locationName} ${demand.dateStr} ${demand.shift} → ${underBroker.brokerName} (agora tem ${underBroker.externalShiftCount} externos, escassez: ${demand.eligibleBrokerIds.length} elegíveis)`);
+      }
+    }
+    
+    if (rescueCount > 0) {
+      console.log(`   📊 Resgate broker-first: ${rescueCount} alocações adicionais`);
+    } else {
+      console.log(`   📊 Resgate broker-first: nenhuma alocação possível`);
+      // Log detalhado de por que não foi possível
+      for (const underBroker of brokersStillUnderTarget.slice(0, 5)) {
+        if (underBroker.externalShiftCount >= underBroker.targetExternals) continue;
+        const eligibleDemands = unallocatedAfterRebalance.filter(d => 
+          !allocatedDemands.has(`${d.locationId}-${d.dateStr}-${d.shift}`) && 
+          d.eligibleBrokerIds.includes(underBroker.brokerId)
+        );
+        if (eligibleDemands.length === 0) {
+          console.log(`   📋 ${underBroker.brokerName}: NENHUMA demanda não-alocada onde é elegível`);
+        } else {
+          console.log(`   📋 ${underBroker.brokerName}: ${eligibleDemands.length} demandas não-alocadas elegíveis mas bloqueado por regras`);
+        }
+      }
     }
   }
 
@@ -4788,12 +4938,39 @@ async function generateWeeklyScheduleWithAccumulator(
     }
   }
 
+  // Construir mapa broker-cêntrico final com contagens atualizadas
+  const brokerEligibilityMap: BrokerExternalEligibility[] = [];
+  for (const [, builder] of brokerEligibilityBuilder) {
+    const broker = context.brokerQueue.find(b => b.brokerId === builder.brokerId);
+    const locations = Array.from(builder.locations.values());
+    const totalEligible = locations.reduce((sum, l) => sum + l.eligible.length, 0);
+    const totalExcluded = locations.reduce((sum, l) => sum + l.excluded.length, 0);
+    brokerEligibilityMap.push({
+      brokerId: builder.brokerId,
+      brokerName: builder.brokerName,
+      linkedLocationCount: locations.length,
+      totalEligibleDemands: totalEligible,
+      totalExcludedDemands: totalExcluded,
+      locations,
+      finalExternalCount: broker?.externalShiftCount || 0,
+      targetExternals: broker?.targetExternals || 2
+    });
+  }
+  // Ordenar: sub-alocados primeiro
+  brokerEligibilityMap.sort((a, b) => {
+    const aUnder = a.finalExternalCount < a.targetExternals ? 0 : 1;
+    const bUnder = b.finalExternalCount < b.targetExternals ? 0 : 1;
+    if (aUnder !== bUnder) return aUnder - bUnder;
+    return a.brokerName.localeCompare(b.brokerName);
+  });
+
   // Salvar trace no módulo para acesso externo
   setLastGenerationTrace({
     decisionTrace,
     brokerDiagnostics,
     eligibilityExclusions,
-    subAllocatedForensics
+    subAllocatedForensics,
+    brokerEligibilityMap
   });
 
   console.log(`\n🎉 TOTAL DE ALOCAÇÕES: ${assignments.length}`);

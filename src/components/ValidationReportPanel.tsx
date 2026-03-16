@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { PostValidationResult, BrokerValidationReport, PostValidationViolation, UnallocatedDemand } from "@/lib/schedulePostValidation";
-import { BrokerAllocationDiagnostic, EligibilityExclusion, SubAllocatedForensic } from "@/lib/generationTrace";
+import { BrokerAllocationDiagnostic, EligibilityExclusion, SubAllocatedForensic, BrokerExternalEligibility } from "@/lib/generationTrace";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,7 +20,8 @@ import {
   Filter,
   LayoutList,
   Layers,
-  HelpCircle
+  HelpCircle,
+  Link2
 } from "lucide-react";
 
 interface ValidationReportPanelProps {
@@ -29,10 +30,11 @@ interface ValidationReportPanelProps {
   brokerDiagnostics?: BrokerAllocationDiagnostic[];
   eligibilityExclusions?: EligibilityExclusion[];
   subAllocatedForensics?: SubAllocatedForensic[];
+  brokerEligibilityMap?: BrokerExternalEligibility[];
 }
 
 type SeverityFilter = "all" | "error" | "warning";
-type ViewMode = "broker" | "rule" | "diagnostic" | "forensic";
+type ViewMode = "broker" | "rule" | "diagnostic" | "forensic" | "eligibility";
 
 // ═══════════════════════════════════════════════════════════
 // RULE EXPLANATIONS MAP
@@ -74,7 +76,7 @@ function getRuleShortName(rule: string): string {
 // ═══════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════
-export function ValidationReportPanel({ result, onClose, brokerDiagnostics, eligibilityExclusions, subAllocatedForensics }: ValidationReportPanelProps) {
+export function ValidationReportPanel({ result, onClose, brokerDiagnostics, eligibilityExclusions, subAllocatedForensics, brokerEligibilityMap }: ValidationReportPanelProps) {
   const [expandedBrokers, setExpandedBrokers] = useState<Set<string>>(new Set());
   const [expandedRules, setExpandedRules] = useState<Set<string>>(new Set());
   const [expandedDiagnostics, setExpandedDiagnostics] = useState<Set<string>>(new Set());
@@ -393,6 +395,17 @@ export function ValidationReportPanel({ result, onClose, brokerDiagnostics, elig
                   Forense
                 </Button>
               )}
+              {brokerEligibilityMap && brokerEligibilityMap.length > 0 && (
+                <Button
+                  variant={viewMode === "eligibility" ? "default" : "outline"}
+                  size="sm"
+                  className="h-7 text-xs gap-1"
+                  onClick={() => setViewMode("eligibility")}
+                >
+                  <Link2 className="h-3 w-3" />
+                  Vínculos
+                </Button>
+              )}
             </div>
             <div className="flex gap-1">
               {hasActiveFilters && (
@@ -448,6 +461,17 @@ export function ValidationReportPanel({ result, onClose, brokerDiagnostics, elig
           ) : viewMode === "forensic" ? (
             <ForensicView
               forensics={subAllocatedForensics || []}
+              expanded={expandedDiagnostics}
+              toggleExpanded={(id) => {
+                const next = new Set(expandedDiagnostics);
+                if (next.has(id)) next.delete(id); else next.add(id);
+                setExpandedDiagnostics(next);
+              }}
+              searchBroker={searchBroker}
+            />
+          ) : viewMode === "eligibility" ? (
+            <EligibilityView
+              eligibilityMap={brokerEligibilityMap || []}
               expanded={expandedDiagnostics}
               toggleExpanded={(id) => {
                 const next = new Set(expandedDiagnostics);
