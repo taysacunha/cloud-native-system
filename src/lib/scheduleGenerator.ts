@@ -3521,6 +3521,13 @@ async function generateWeeklyScheduleWithAccumulator(
           const check = checkTrulyInviolableRulesWithRelaxation(underBroker, demandForCheck, context, true);
           if (!check.allowed) continue;
           
+          // Verificar regras absolutas (Regra 4, 5, construtora, etc.)
+          const absCheck = checkAbsoluteRules(underBroker, demandForCheck, context, 5);
+          if (!absCheck.allowed) {
+            console.log(`   ⛔ CHAIN SWAP: ${underBroker.brokerName} bloqueado: ${absCheck.reason}`);
+            continue;
+          }
+          
           // Check the underloaded broker doesn't already have an external on this day
           const underBrokerHasExternalOnDay = context.assignments.some(a => 
             a.broker_id === underBroker.brokerId && 
