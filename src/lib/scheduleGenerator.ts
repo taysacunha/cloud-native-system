@@ -4523,10 +4523,10 @@ async function generateWeeklyScheduleWithAccumulator(
   }
   
   // Salvar trace no módulo para acesso externo
-  lastGenerationTrace = {
+  setLastGenerationTrace({
     decisionTrace,
     brokerDiagnostics
-  };
+  });
 
   console.log(`\n🎉 TOTAL DE ALOCAÇÕES: ${assignments.length}`);
 
