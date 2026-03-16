@@ -4938,12 +4938,39 @@ async function generateWeeklyScheduleWithAccumulator(
     }
   }
 
+  // Construir mapa broker-cêntrico final com contagens atualizadas
+  const brokerEligibilityMap: BrokerExternalEligibility[] = [];
+  for (const [, builder] of brokerEligibilityBuilder) {
+    const broker = context.brokerQueue.find(b => b.brokerId === builder.brokerId);
+    const locations = Array.from(builder.locations.values());
+    const totalEligible = locations.reduce((sum, l) => sum + l.eligible.length, 0);
+    const totalExcluded = locations.reduce((sum, l) => sum + l.excluded.length, 0);
+    brokerEligibilityMap.push({
+      brokerId: builder.brokerId,
+      brokerName: builder.brokerName,
+      linkedLocationCount: locations.length,
+      totalEligibleDemands: totalEligible,
+      totalExcludedDemands: totalExcluded,
+      locations,
+      finalExternalCount: broker?.externalShiftCount || 0,
+      targetExternals: broker?.targetExternals || 2
+    });
+  }
+  // Ordenar: sub-alocados primeiro
+  brokerEligibilityMap.sort((a, b) => {
+    const aUnder = a.finalExternalCount < a.targetExternals ? 0 : 1;
+    const bUnder = b.finalExternalCount < b.targetExternals ? 0 : 1;
+    if (aUnder !== bUnder) return aUnder - bUnder;
+    return a.brokerName.localeCompare(b.brokerName);
+  });
+
   // Salvar trace no módulo para acesso externo
   setLastGenerationTrace({
     decisionTrace,
     brokerDiagnostics,
     eligibilityExclusions,
-    subAllocatedForensics
+    subAllocatedForensics,
+    brokerEligibilityMap
   });
 
   console.log(`\n🎉 TOTAL DE ALOCAÇÕES: ${assignments.length}`);
