@@ -4042,7 +4042,8 @@ async function generateWeeklyScheduleWithAccumulator(
               .sort((a, b) => a.externalShiftCount - b.externalShiftCount);
             
             for (const broker of compensationBrokers) {
-              const check = checkTrulyInviolableRulesWithRelaxation(broker, demand, context, true);
+              // CORREÇÃO: Usar helper UNIFICADO (absolute + relaxed)
+              const check = isBrokerTrulyEligibleForDemand(broker, demand, context);
               if (!check.allowed) continue;
               
               allocateDemand(demand, broker, context);
