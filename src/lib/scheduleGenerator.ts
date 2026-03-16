@@ -3019,33 +3019,55 @@ async function generateWeeklyScheduleWithAccumulator(
   // O vínculo local pode ser mais restritivo, mas NUNCA mais permissivo
   // ═══════════════════════════════════════════════════════════
   const isBrokerAvailableForShift = (lb: any, shift: "morning" | "afternoon", dayOfWeek: string): boolean => {
+    return isBrokerAvailableForShiftWithReason(lb, shift, dayOfWeek).available;
+  };
+
+  // Versão que retorna o motivo da exclusão para diagnóstico
+  const isBrokerAvailableForShiftWithReason = (lb: any, shift: "morning" | "afternoon", dayOfWeek: string): { available: boolean; reason?: string } => {
     const broker = lb.brokers;
     
     // REGRA ABSOLUTA #1: Corretor deve estar disponível para este dia da semana
     if (!broker?.available_weekdays?.includes(dayOfWeek)) {
-      return false;
+      return { available: false, reason: `DIA: ${dayOfWeek} não está em available_weekdays` };
     }
     
     // REGRA ABSOLUTA #2: Verificar disponibilidade GLOBAL do corretor para este turno
-    // Esta verificação NUNCA pode ser ultrapassada pelo vínculo local
     const globalAvail = broker.weekday_shift_availability as Record<string, string[]> | null;
     if (globalAvail && globalAvail[dayOfWeek]) {
       if (!globalAvail[dayOfWeek].includes(shift)) {
-        console.log(`❌ BLOQUEADO REGRA ABSOLUTA: ${broker.name} não tem disponibilidade GLOBAL para ${shift} em ${dayOfWeek}`);
-        return false; // NUNCA ultrapassar a disponibilidade global
+        return { available: false, reason: `GLOBAL: sem disponibilidade para ${shift} em ${dayOfWeek}` };
       }
     }
     
-    // Agora verificar disponibilidade no vínculo local (pode ser mais restritivo)
+    // Verificar disponibilidade no vínculo local (pode ser mais restritivo)
     const localAvail = lb.weekday_shift_availability as Record<string, string[]> | null;
     if (localAvail && localAvail[dayOfWeek]) {
-      return localAvail[dayOfWeek].includes(shift);
+      // CORREÇÃO: Se array vazio, tratar como "sem restrição local" e usar fallback legacy
+      const localShifts = localAvail[dayOfWeek];
+      if (localShifts.length === 0) {
+        // Fallback para campos legacy quando array local está vazio
+        if (shift === "morning" && lb.available_morning === false) {
+          return { available: false, reason: `LEGACY: available_morning = false (local vazio)` };
+        }
+        if (shift === "afternoon" && lb.available_afternoon === false) {
+          return { available: false, reason: `LEGACY: available_afternoon = false (local vazio)` };
+        }
+        return { available: true };
+      }
+      if (!localShifts.includes(shift)) {
+        return { available: false, reason: `LOCAL: weekday_shift_availability não inclui ${shift} em ${dayOfWeek}` };
+      }
+      return { available: true };
     }
     
     // Fallback para campos legacy
-    if (shift === "morning") return lb.available_morning !== false;
-    if (shift === "afternoon") return lb.available_afternoon !== false;
-    return false;
+    if (shift === "morning" && lb.available_morning === false) {
+      return { available: false, reason: `LEGACY: available_morning = false` };
+    }
+    if (shift === "afternoon" && lb.available_afternoon === false) {
+      return { available: false, reason: `LEGACY: available_afternoon = false` };
+    }
+    return { available: true };
   };
 
   for (const location of externalLocations || []) {
