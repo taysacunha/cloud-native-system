@@ -4150,8 +4150,8 @@ async function generateWeeklyScheduleWithAccumulator(
                 if (!broker || broker.externalShiftCount >= MAX_EXTERNAL_SHIFTS_PER_WEEK) continue;
                 if (!demand.eligibleBrokerIds.includes(broker.brokerId)) continue;
                 
-                // Verificar TODAS as regras reais (com relaxamento de Regra 8)
-                const check = checkTrulyInviolableRulesWithRelaxation(broker, demand, context, true);
+                // CORREÇÃO: Usar helper UNIFICADO (absolute + relaxed) — evita possibilidade fantasma
+                const check = isBrokerTrulyEligibleForDemand(broker, demand, context);
                 if (!check.allowed) continue;
                 
                 // Este under-two PODE realmente pegar esta demanda
