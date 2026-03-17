@@ -99,6 +99,9 @@ const Schedules = () => {
   const [deleteMonthDialogOpen, setDeleteMonthDialogOpen] = useState(false);
   const [schedulesOfMonthToDelete, setSchedulesOfMonthToDelete] = useState<any[]>([]);
   
+  // Estado para mapa de elegibilidade persistido do banco
+  const [persistedEligibilityMap, setPersistedEligibilityMap] = useState<any[] | null>(null);
+  
   // Estados para seleção de semanas (novo sistema de trava)
   const [weekSelectionDialogOpen, setWeekSelectionDialogOpen] = useState(false);
   
@@ -202,6 +205,10 @@ const Schedules = () => {
         brokerReports: savedValidation.broker_reports as any[] || [],
         unallocatedDemands: savedValidation.unallocated_demands as any[] || []
       });
+      
+      // Restaurar mapa de elegibilidade persistido
+      const savedMap = (savedValidation as any).broker_eligibility_map;
+      setPersistedEligibilityMap(savedMap && Array.isArray(savedMap) ? savedMap : null);
     } else if (!isLoadingValidation && selectedScheduleId) {
       // Se não houver validação salva e não está carregando, limpar
       setPostValidationResult(null);
@@ -701,17 +708,22 @@ const Schedules = () => {
         .delete()
         .eq("schedule_id", scheduleId);
 
+      // Capturar mapa de elegibilidade do trace em memória
+      const eligibilityMap = getLastGenerationTrace()?.brokerEligibilityMap || null;
+
       // Inserir nova validação
+      const insertData: any = {
+        schedule_id: scheduleId,
+        is_valid: validation.isValid,
+        violations: validation.violations as any,
+        unallocated_demands: validation.unallocatedDemands as any,
+        summary: validation.summary as any,
+        broker_reports: validation.brokerReports as any,
+        broker_eligibility_map: eligibilityMap as any,
+      };
       const { error } = await supabase
         .from("schedule_validation_results")
-        .insert([{
-          schedule_id: scheduleId,
-          is_valid: validation.isValid,
-          violations: validation.violations as any,
-          unallocated_demands: validation.unallocatedDemands as any,
-          summary: validation.summary as any,
-          broker_reports: validation.brokerReports as any
-        }]);
+        .insert([insertData]);
 
       if (error) throw error;
       console.log("✅ Validação salva no banco de dados");
@@ -2271,7 +2283,7 @@ const Schedules = () => {
                 brokerDiagnostics={getLastGenerationTrace()?.brokerDiagnostics}
                 eligibilityExclusions={getLastGenerationTrace()?.eligibilityExclusions}
                 subAllocatedForensics={getLastGenerationTrace()?.subAllocatedForensics}
-                brokerEligibilityMap={getLastGenerationTrace()?.brokerEligibilityMap}
+                brokerEligibilityMap={getLastGenerationTrace()?.brokerEligibilityMap || persistedEligibilityMap || undefined}
               />
             </div>
           ) : (
