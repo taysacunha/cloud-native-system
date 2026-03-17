@@ -99,6 +99,9 @@ const Schedules = () => {
   const [deleteMonthDialogOpen, setDeleteMonthDialogOpen] = useState(false);
   const [schedulesOfMonthToDelete, setSchedulesOfMonthToDelete] = useState<any[]>([]);
   
+  // Estado para mapa de elegibilidade persistido do banco
+  const [persistedEligibilityMap, setPersistedEligibilityMap] = useState<any[] | null>(null);
+  
   // Estados para seleção de semanas (novo sistema de trava)
   const [weekSelectionDialogOpen, setWeekSelectionDialogOpen] = useState(false);
   
