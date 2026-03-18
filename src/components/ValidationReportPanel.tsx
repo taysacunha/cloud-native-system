@@ -958,7 +958,7 @@ function DiagnosticView({
                         {diag.finalExternalCount}/{diag.targetExternals} externos
                       </Badge>
                       <Badge variant="secondary" className="text-xs">
-                        {diag.totalOpportunities} rejeições
+                        {diag.totalOpportunities} vezes bloqueado
                       </Badge>
                     </div>
                   </div>
