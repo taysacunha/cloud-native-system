@@ -989,7 +989,7 @@ function DiagnosticView({
                               <span>{formatDateBR(opp.dateStr)}</span>
                               <Badge variant="outline" className="text-[10px]">{opp.shift === "morning" ? "Manhã" : "Tarde"}</Badge>
                             </div>
-                            <div className="mt-1 text-muted-foreground">{opp.reason}</div>
+                            <div className="mt-1 text-muted-foreground">{ruleExplanations[opp.rule] || opp.rule}: {opp.reason}</div>
                           </div>
                         ))}
                         {diag.opportunities.length > 20 && (
