@@ -1046,7 +1046,7 @@ function EligibilityView({ eligibilityMap, expanded, toggleExpanded, searchBroke
                   {broker.finalExternalCount}/{broker.targetExternals} externos
                 </Badge>
                 <Badge variant="outline" className="text-xs">
-                  {broker.linkedLocationCount} locais
+                  {broker.linkedLocationCount} locais vinculados
                 </Badge>
                 <Badge variant="outline" className="text-xs">
                   {broker.totalEligibleDemands} elegíveis
