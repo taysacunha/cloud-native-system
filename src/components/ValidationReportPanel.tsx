@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { PostValidationResult, BrokerValidationReport, PostValidationViolation, UnallocatedDemand } from "@/lib/schedulePostValidation";
-import { BrokerAllocationDiagnostic, EligibilityExclusion, SubAllocatedForensic, BrokerExternalEligibility } from "@/lib/generationTrace";
+import { BrokerAllocationDiagnostic, EligibilityExclusion, BrokerExternalEligibility } from "@/lib/generationTrace";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
