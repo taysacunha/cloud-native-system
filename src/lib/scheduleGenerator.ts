@@ -3223,7 +3223,7 @@ async function generateWeeklyScheduleWithAccumulator(
   }>();
   
   // Inicializar com todos os corretores ATIVOS que têm vínculos externos
-  const activeBrokerIds = new Set(context.brokerQueue.map(b => b.brokerId));
+  const activeBrokerIds = new Set(brokerQueue.map(b => b.brokerId));
   for (const location of externalLocations || []) {
     for (const lb of location.location_brokers || []) {
       const brokerId = lb.broker_id;
