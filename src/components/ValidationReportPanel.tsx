@@ -29,12 +29,11 @@ interface ValidationReportPanelProps {
   onClose: () => void;
   brokerDiagnostics?: BrokerAllocationDiagnostic[];
   eligibilityExclusions?: EligibilityExclusion[];
-  subAllocatedForensics?: SubAllocatedForensic[];
   brokerEligibilityMap?: BrokerExternalEligibility[];
 }
 
 type SeverityFilter = "all" | "error" | "warning";
-type ViewMode = "broker" | "rule" | "diagnostic" | "forensic" | "eligibility";
+type ViewMode = "broker" | "rule" | "diagnostic" | "eligibility";
 
 // ═══════════════════════════════════════════════════════════
 // RULE EXPLANATIONS MAP
