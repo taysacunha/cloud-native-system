@@ -970,7 +970,7 @@ function DiagnosticView({
                         <div className="text-xs font-medium text-muted-foreground">Regras que impediram a alocação:</div>
                         {ruleEntries.map(([rule, count]) => (
                           <div key={rule} className="flex items-center justify-between p-2 rounded bg-background border text-xs">
-                            <span>{rule}</span>
+                            <span>{ruleExplanations[rule] || rule}</span>
                             <Badge variant="outline" className="text-xs">{count}x</Badge>
                           </div>
                         ))}
