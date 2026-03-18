@@ -1086,8 +1086,8 @@ function EligibilityView({ eligibilityMap, expanded, toggleExpanded, searchBroke
                     {loc.excluded.length > 0 && (
                       <div className="flex flex-wrap gap-1 mt-1">
                         {loc.excluded.map((e, i) => (
-                          <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800" title={e.reason}>
-                            {e.dateStr} {e.shift === "morning" ? "M" : "T"} — {e.reason}
+                          <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800" title={humanizeExclusionReason(e.reason)}>
+                            {formatDateBR(e.dateStr)} {e.shift === "morning" ? "Manhã" : "Tarde"} — {humanizeExclusionReason(e.reason)}
                           </span>
                         ))}
                       </div>
