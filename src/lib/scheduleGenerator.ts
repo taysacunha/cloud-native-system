@@ -3222,10 +3222,12 @@ async function generateWeeklyScheduleWithAccumulator(
     locations: Map<string, BrokerLocationEligibility>;
   }>();
   
-  // Inicializar com todos os corretores que têm vínculos externos
+  // Inicializar com todos os corretores ATIVOS que têm vínculos externos
+  const activeBrokerIds = new Set(brokerQueue.map(b => b.brokerId));
   for (const location of externalLocations || []) {
     for (const lb of location.location_brokers || []) {
       const brokerId = lb.broker_id;
+      if (!activeBrokerIds.has(brokerId)) continue; // Pular corretores inativos
       const brokerName = lb.brokers?.name || brokerId;
       if (!brokerEligibilityBuilder.has(brokerId)) {
         brokerEligibilityBuilder.set(brokerId, {

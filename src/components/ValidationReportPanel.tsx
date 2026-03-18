@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { PostValidationResult, BrokerValidationReport, PostValidationViolation, UnallocatedDemand } from "@/lib/schedulePostValidation";
-import { BrokerAllocationDiagnostic, EligibilityExclusion, SubAllocatedForensic, BrokerExternalEligibility } from "@/lib/generationTrace";
+import { BrokerAllocationDiagnostic, EligibilityExclusion, BrokerExternalEligibility } from "@/lib/generationTrace";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,12 +29,11 @@ interface ValidationReportPanelProps {
   onClose: () => void;
   brokerDiagnostics?: BrokerAllocationDiagnostic[];
   eligibilityExclusions?: EligibilityExclusion[];
-  subAllocatedForensics?: SubAllocatedForensic[];
   brokerEligibilityMap?: BrokerExternalEligibility[];
 }
 
 type SeverityFilter = "all" | "error" | "warning";
-type ViewMode = "broker" | "rule" | "diagnostic" | "forensic" | "eligibility";
+type ViewMode = "broker" | "rule" | "diagnostic" | "eligibility";
 
 // ═══════════════════════════════════════════════════════════
 // RULE EXPLANATIONS MAP
@@ -68,15 +67,49 @@ function getRuleExplanation(rule: string): string {
 }
 
 function getRuleShortName(rule: string): string {
-  // Extract the main rule identifier
   const parts = rule.split(":");
   return parts[0].trim();
 }
 
 // ═══════════════════════════════════════════════════════════
+// HUMANIZAR RAZÕES DE EXCLUSÃO
+// Traduz strings técnicas do gerador para português claro
+// ═══════════════════════════════════════════════════════════
+const weekdayMap: Record<string, string> = {
+  monday: "segundas", tuesday: "terças", wednesday: "quartas",
+  thursday: "quintas", friday: "sextas", saturday: "sábados", sunday: "domingos",
+};
+const shiftMap: Record<string, string> = { morning: "manhã", afternoon: "tarde" };
+
+function humanizeExclusionReason(reason: string): string {
+  // DIA: monday não está em available_weekdays
+  {
+    const m = reason.match(/DIA:\s*(\w+)\s*não está em available_weekdays/i);
+    if (m) return `Corretor não trabalha às ${weekdayMap[m[1]] || m[1]}`;
+  }
+  // GLOBAL: sem disponibilidade para morning em tuesday
+  {
+    const m = reason.match(/GLOBAL:\s*sem disponibilidade para\s*(\w+)\s*em\s*(\w+)/i);
+    if (m) return `Sem disponibilidade pela ${shiftMap[m[1]] || m[1]} às ${weekdayMap[m[2]] || m[2]}`;
+  }
+  // LOCAL: weekday_shift_availability não inclui afternoon em wednesday
+  {
+    const m = reason.match(/LOCAL:\s*weekday_shift_availability não inclui\s*(\w+)\s*em\s*(\w+)/i);
+    if (m) return `Vínculo local não permite turno da ${shiftMap[m[1]] || m[1]} às ${weekdayMap[m[2]] || m[2]}`;
+  }
+  // LEGACY: available_morning = false / available_afternoon = false
+  {
+    const m = reason.match(/LEGACY:\s*available_(morning|afternoon)\s*=\s*false/i);
+    if (m) return `Turno da ${shiftMap[m[1]] || m[1]} desabilitado neste local`;
+  }
+  // Fallback: return as-is
+  return reason;
+}
+
+// ═══════════════════════════════════════════════════════════
 // MAIN COMPONENT
 // ═══════════════════════════════════════════════════════════
-export function ValidationReportPanel({ result, onClose, brokerDiagnostics, eligibilityExclusions, subAllocatedForensics, brokerEligibilityMap }: ValidationReportPanelProps) {
+export function ValidationReportPanel({ result, onClose, brokerDiagnostics, eligibilityExclusions, brokerEligibilityMap }: ValidationReportPanelProps) {
   const [expandedBrokers, setExpandedBrokers] = useState<Set<string>>(new Set());
   const [expandedRules, setExpandedRules] = useState<Set<string>>(new Set());
   const [expandedDiagnostics, setExpandedDiagnostics] = useState<Set<string>>(new Set());
@@ -373,39 +406,24 @@ export function ValidationReportPanel({ result, onClose, brokerDiagnostics, elig
                 <Layers className="h-3 w-3" />
                 Por Regra
               </Button>
-              {brokerDiagnostics && brokerDiagnostics.length > 0 && (
-                <Button
-                  variant={viewMode === "diagnostic" ? "default" : "outline"}
-                  size="sm"
-                  className="h-7 text-xs gap-1"
-                  onClick={() => setViewMode("diagnostic")}
-                >
-                  <HelpCircle className="h-3 w-3" />
-                  Por que não alocou
-                </Button>
-              )}
-              {subAllocatedForensics && subAllocatedForensics.length > 0 && (
-                <Button
-                  variant={viewMode === "forensic" ? "default" : "outline"}
-                  size="sm"
-                  className="h-7 text-xs gap-1"
-                  onClick={() => setViewMode("forensic")}
-                >
-                  <Search className="h-3 w-3" />
-                  Forense
-                </Button>
-              )}
-              {brokerEligibilityMap && brokerEligibilityMap.length > 0 && (
-                <Button
-                  variant={viewMode === "eligibility" ? "default" : "outline"}
-                  size="sm"
-                  className="h-7 text-xs gap-1"
-                  onClick={() => setViewMode("eligibility")}
-                >
-                  <Link2 className="h-3 w-3" />
-                  Vínculos
-                </Button>
-              )}
+              <Button
+                variant={viewMode === "diagnostic" ? "default" : "outline"}
+                size="sm"
+                className="h-7 text-xs gap-1"
+                onClick={() => setViewMode("diagnostic")}
+              >
+                <HelpCircle className="h-3 w-3" />
+                Por que não alocou
+              </Button>
+              <Button
+                variant={viewMode === "eligibility" ? "default" : "outline"}
+                size="sm"
+                className="h-7 text-xs gap-1"
+                onClick={() => setViewMode("eligibility")}
+              >
+                <Link2 className="h-3 w-3" />
+                Vínculos
+              </Button>
             </div>
             <div className="flex gap-1">
               {hasActiveFilters && (
@@ -450,17 +468,6 @@ export function ValidationReportPanel({ result, onClose, brokerDiagnostics, elig
             <DiagnosticView
               diagnostics={brokerDiagnostics || []}
               eligibilityExclusions={eligibilityExclusions || []}
-              expanded={expandedDiagnostics}
-              toggleExpanded={(id) => {
-                const next = new Set(expandedDiagnostics);
-                if (next.has(id)) next.delete(id); else next.add(id);
-                setExpandedDiagnostics(next);
-              }}
-              searchBroker={searchBroker}
-            />
-          ) : viewMode === "forensic" ? (
-            <ForensicView
-              forensics={subAllocatedForensics || []}
               expanded={expandedDiagnostics}
               toggleExpanded={(id) => {
                 const next = new Set(expandedDiagnostics);
@@ -883,7 +890,7 @@ function DiagnosticView({
                         <div className="text-xs font-medium text-muted-foreground">Exclusões por motivo:</div>
                         {reasonEntries.map(([reason, count]) => (
                           <div key={reason} className="flex items-center justify-between p-2 rounded bg-background border text-xs">
-                            <span className="text-orange-700 dark:text-orange-400">{reason}</span>
+                            <span className="text-orange-700 dark:text-orange-400">{humanizeExclusionReason(reason)}</span>
                             <Badge variant="outline" className="text-xs">{count}x</Badge>
                           </div>
                         ))}
@@ -902,7 +909,7 @@ function DiagnosticView({
                               <span>{formatDateBR(det.dateStr)}</span>
                               <Badge variant="outline" className="text-[10px]">{det.shift === "morning" ? "Manhã" : "Tarde"}</Badge>
                             </div>
-                            <div className="mt-1 text-orange-600 dark:text-orange-400">{det.reason}</div>
+                            <div className="mt-1 text-orange-600 dark:text-orange-400">{humanizeExclusionReason(det.reason)}</div>
                           </div>
                         ))}
                         {excl.exclusionDetails.length > 20 && (
@@ -926,10 +933,10 @@ function DiagnosticView({
           <div className="p-3 rounded-lg bg-accent/50 border border-accent text-sm">
             <div className="font-medium flex items-center gap-2">
               <HelpCircle className="h-4 w-4" />
-              Diagnóstico Forense: {filtered.length} corretor{filtered.length !== 1 ? "es" : ""} com menos de 2 externos
+              Corretores que não atingiram a meta de externos: {filtered.length} corretor{filtered.length !== 1 ? "es" : ""}
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              Dados capturados em tempo real durante a geração. Cada rejeição mostra a regra exata que bloqueou no momento da decisão.
+              Para cada corretor abaixo, veja quantas vezes ele foi considerado para alocação e a regra que impediu.
             </p>
           </div>
 
@@ -951,7 +958,7 @@ function DiagnosticView({
                         {diag.finalExternalCount}/{diag.targetExternals} externos
                       </Badge>
                       <Badge variant="secondary" className="text-xs">
-                        {diag.totalOpportunities} rejeições
+                        {diag.totalOpportunities} vezes bloqueado
                       </Badge>
                     </div>
                   </div>
@@ -960,10 +967,10 @@ function DiagnosticView({
                   <div className="ml-6 mt-2 space-y-3 pb-3">
                     {ruleEntries.length > 0 && (
                       <div className="space-y-1">
-                        <div className="text-xs font-medium text-muted-foreground">Rejeições por regra:</div>
+                        <div className="text-xs font-medium text-muted-foreground">Regras que impediram a alocação:</div>
                         {ruleEntries.map(([rule, count]) => (
                           <div key={rule} className="flex items-center justify-between p-2 rounded bg-background border text-xs">
-                            <span>{rule}</span>
+                            <span>{ruleExplanations[rule] || rule}</span>
                             <Badge variant="outline" className="text-xs">{count}x</Badge>
                           </div>
                         ))}
@@ -982,7 +989,7 @@ function DiagnosticView({
                               <span>{formatDateBR(opp.dateStr)}</span>
                               <Badge variant="outline" className="text-[10px]">{opp.shift === "morning" ? "Manhã" : "Tarde"}</Badge>
                             </div>
-                            <div className="mt-1 text-muted-foreground">{opp.reason}</div>
+                            <div className="mt-1 text-muted-foreground">{ruleExplanations[opp.rule] || opp.rule}: {opp.reason}</div>
                           </div>
                         ))}
                         {diag.opportunities.length > 20 && (
@@ -1004,157 +1011,6 @@ function DiagnosticView({
 }
 
 
-// ═══════════════════════════════════════════════════════════
-// FORENSIC VIEW: Rastreio de competição para sub-alocados
-// ═══════════════════════════════════════════════════════════
-function ForensicView({
-  forensics,
-  expanded,
-  toggleExpanded,
-  searchBroker,
-}: {
-  forensics: SubAllocatedForensic[];
-  expanded: Set<string>;
-  toggleExpanded: (id: string) => void;
-  searchBroker: string;
-}) {
-  const filtered = forensics.filter(f =>
-    !searchBroker || f.brokerName.toLowerCase().includes(searchBroker.toLowerCase())
-  );
-
-  if (filtered.length === 0) {
-    return (
-      <div className="text-center py-8 text-muted-foreground text-sm">
-        Nenhum corretor sub-alocado encontrado.
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-2">
-      {filtered.map(f => {
-        const isExpanded = expanded.has(f.brokerId);
-        const outcomeColor = f.lostByCompetition > f.lostByRule ? "text-amber-600" : "text-destructive";
-        
-        return (
-          <Collapsible key={f.brokerId} open={isExpanded} onOpenChange={() => toggleExpanded(f.brokerId)}>
-            <CollapsibleTrigger className="flex items-center justify-between w-full p-3 rounded-lg border bg-card hover:bg-accent/50 transition-colors">
-              <div className="flex items-center gap-2">
-                {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                <User className="h-4 w-4 text-muted-foreground" />
-                <span className="font-medium text-sm">{f.brokerName}</span>
-                <Badge variant="outline" className="text-xs">
-                  {f.finalExternalCount}/{f.targetExternals} ext
-                </Badge>
-                {f.isSaturdayInternalWorker && (
-                  <Badge variant="secondary" className="text-xs">Sáb Interno</Badge>
-                )}
-              </div>
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <span>{f.totalEligibleDemands} elegíveis</span>
-                <span className="text-emerald-600">✅{f.allocatedCount}</span>
-                <span className={outcomeColor}>🏁{f.lostByCompetition}</span>
-                <span className="text-destructive">🚫{f.lostByRule}</span>
-              </div>
-            </CollapsibleTrigger>
-            <CollapsibleContent>
-              <div className="mt-1 p-3 rounded-lg border bg-muted/30 space-y-3">
-                {/* Summary */}
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div className="p-2 rounded bg-card border">
-                    <div className="text-muted-foreground">Demandas Elegíveis</div>
-                    <div className="text-lg font-bold">{f.totalEligibleDemands}</div>
-                  </div>
-                  <div className="p-2 rounded bg-card border">
-                    <div className="text-muted-foreground">Alocado com Sucesso</div>
-                    <div className="text-lg font-bold text-emerald-600">{f.allocatedCount}</div>
-                  </div>
-                  <div className="p-2 rounded bg-card border">
-                    <div className="text-muted-foreground">Perdeu por Competição</div>
-                    <div className="text-lg font-bold text-amber-600">{f.lostByCompetition}</div>
-                    <div className="text-muted-foreground mt-1">Outro corretor na frente na fila</div>
-                  </div>
-                  <div className="p-2 rounded bg-card border">
-                    <div className="text-muted-foreground">Bloqueado por Regra</div>
-                    <div className="text-lg font-bold text-destructive">{f.lostByRule}</div>
-                  </div>
-                </div>
-
-                {/* Rule blocks breakdown */}
-                {Object.keys(f.ruleBlockCounts).length > 0 && (
-                  <div>
-                    <div className="text-xs font-medium mb-1">Regras que Bloquearam:</div>
-                    <div className="space-y-1">
-                      {Object.entries(f.ruleBlockCounts)
-                        .sort(([,a], [,b]) => b - a)
-                        .map(([rule, count]) => (
-                          <div key={rule} className="flex justify-between text-xs p-1.5 rounded bg-card border">
-                            <span className="text-destructive">{rule}</span>
-                            <Badge variant="outline" className="text-xs">{count}x</Badge>
-                          </div>
-                        ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Competition losses detail */}
-                {f.lostByCompetition > 0 && (
-                  <div>
-                    <div className="text-xs font-medium mb-1">
-                      Perdas por Competição (top 15):
-                    </div>
-                    <div className="space-y-1 max-h-[200px] overflow-y-auto">
-                      {f.competitionTrace
-                        .filter(t => t.outcome === "outcompeted")
-                        .slice(0, 15)
-                        .map((t, i) => (
-                          <div key={i} className="flex items-center gap-2 text-xs p-1.5 rounded bg-card border">
-                            <MapPin className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-                            <span className="font-mono">{t.dateStr}</span>
-                            <span>{t.locationName}</span>
-                            <Badge variant="outline" className="text-xs">{t.shift === "morning" ? "M" : "T"}</Badge>
-                            <span className="text-muted-foreground">→</span>
-                            <span className="text-amber-600 font-medium">{t.selectedBrokerName}</span>
-                            <span className="text-muted-foreground ml-auto">pos {t.sortPosition}/{t.totalInQueue} | ext={t.externalCountAtTime}</span>
-                          </div>
-                        ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Rule blocks detail */}
-                {f.lostByRule > 0 && (
-                  <div>
-                    <div className="text-xs font-medium mb-1">
-                      Bloqueios por Regra (top 15):
-                    </div>
-                    <div className="space-y-1 max-h-[200px] overflow-y-auto">
-                      {f.competitionTrace
-                        .filter(t => t.outcome === "rule_blocked")
-                        .slice(0, 15)
-                        .map((t, i) => (
-                          <div key={i} className="flex items-center gap-2 text-xs p-1.5 rounded bg-card border">
-                            <Calendar className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-                            <span className="font-mono">{t.dateStr}</span>
-                            <span>{t.locationName}</span>
-                            <Badge variant="outline" className="text-xs">{t.shift === "morning" ? "M" : "T"}</Badge>
-                            <span className="text-destructive font-medium">{t.blockRule}</span>
-                            <span className="text-muted-foreground text-[10px] truncate max-w-[200px]" title={t.blockReason}>
-                              {t.blockReason}
-                            </span>
-                          </div>
-                        ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </CollapsibleContent>
-          </Collapsible>
-        );
-      })}
-    </div>
-  );
-}
 
 // ═══════════════════════════════════════════════════════════
 // ELIGIBILITY VIEW — Vínculos Externos por Corretor
@@ -1187,10 +1043,10 @@ function EligibilityView({ eligibilityMap, expanded, toggleExpanded, searchBroke
                 <User className="h-3.5 w-3.5 text-muted-foreground" />
                 <span className="font-medium text-sm">{broker.brokerName}</span>
                 <Badge variant={isUnder ? "destructive" : "secondary"} className="text-xs ml-auto">
-                  {broker.finalExternalCount}/{broker.targetExternals} ext
+                  {broker.finalExternalCount}/{broker.targetExternals} externos
                 </Badge>
                 <Badge variant="outline" className="text-xs">
-                  {broker.linkedLocationCount} locais
+                  {broker.linkedLocationCount} locais vinculados
                 </Badge>
                 <Badge variant="outline" className="text-xs">
                   {broker.totalEligibleDemands} elegíveis
@@ -1222,7 +1078,7 @@ function EligibilityView({ eligibilityMap, expanded, toggleExpanded, searchBroke
                       <div className="flex flex-wrap gap-1 mt-1">
                         {loc.eligible.map((e, i) => (
                           <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
-                            {e.dateStr} {e.shift === "morning" ? "M" : "T"}
+                            {formatDateBR(e.dateStr)} {e.shift === "morning" ? "Manhã" : "Tarde"}
                           </span>
                         ))}
                       </div>
@@ -1230,8 +1086,8 @@ function EligibilityView({ eligibilityMap, expanded, toggleExpanded, searchBroke
                     {loc.excluded.length > 0 && (
                       <div className="flex flex-wrap gap-1 mt-1">
                         {loc.excluded.map((e, i) => (
-                          <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800" title={e.reason}>
-                            {e.dateStr} {e.shift === "morning" ? "M" : "T"} — {e.reason}
+                          <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800" title={humanizeExclusionReason(e.reason)}>
+                            {formatDateBR(e.dateStr)} {e.shift === "morning" ? "Manhã" : "Tarde"} — {humanizeExclusionReason(e.reason)}
                           </span>
                         ))}
                       </div>
