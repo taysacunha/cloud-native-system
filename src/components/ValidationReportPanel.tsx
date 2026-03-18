@@ -890,7 +890,7 @@ function DiagnosticView({
                         <div className="text-xs font-medium text-muted-foreground">Exclusões por motivo:</div>
                         {reasonEntries.map(([reason, count]) => (
                           <div key={reason} className="flex items-center justify-between p-2 rounded bg-background border text-xs">
-                            <span className="text-orange-700 dark:text-orange-400">{reason}</span>
+                            <span className="text-orange-700 dark:text-orange-400">{humanizeExclusionReason(reason)}</span>
                             <Badge variant="outline" className="text-xs">{count}x</Badge>
                           </div>
                         ))}
