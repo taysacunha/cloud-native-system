@@ -475,6 +475,7 @@ export function ValidationReportPanel({ result, onClose, brokerDiagnostics, elig
                 setExpandedDiagnostics(next);
               }}
               searchBroker={searchBroker}
+              brokerReports={result.brokerReports}
             />
           ) : viewMode === "eligibility" ? (
             <EligibilityView
@@ -486,6 +487,7 @@ export function ValidationReportPanel({ result, onClose, brokerDiagnostics, elig
                 setExpandedDiagnostics(next);
               }}
               searchBroker={searchBroker}
+              brokerReports={result.brokerReports}
             />
           ) : null}
           {filteredBrokerReports.length === 0 && filteredGlobalViolations.length === 0 && filteredViolationsByRule.size === 0 && hasActiveFilters && (
