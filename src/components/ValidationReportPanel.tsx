@@ -475,6 +475,7 @@ export function ValidationReportPanel({ result, onClose, brokerDiagnostics, elig
                 setExpandedDiagnostics(next);
               }}
               searchBroker={searchBroker}
+              brokerReports={result.brokerReports}
             />
           ) : viewMode === "eligibility" ? (
             <EligibilityView
@@ -486,6 +487,7 @@ export function ValidationReportPanel({ result, onClose, brokerDiagnostics, elig
                 setExpandedDiagnostics(next);
               }}
               searchBroker={searchBroker}
+              brokerReports={result.brokerReports}
             />
           ) : null}
           {filteredBrokerReports.length === 0 && filteredGlobalViolations.length === 0 && filteredViolationsByRule.size === 0 && hasActiveFilters && (
@@ -819,14 +821,23 @@ function DiagnosticView({
   eligibilityExclusions,
   expanded,
   toggleExpanded,
-  searchBroker
+  searchBroker,
+  brokerReports
 }: {
   diagnostics: BrokerAllocationDiagnostic[];
   eligibilityExclusions: EligibilityExclusion[];
   expanded: Set<string>;
   toggleExpanded: (id: string) => void;
   searchBroker: string;
+  brokerReports: BrokerValidationReport[];
 }) {
+  // Build real external count map from final assignments
+  const realExternalMap = useMemo(() => {
+    const map = new Map<string, number>();
+    brokerReports.forEach(r => map.set(r.brokerId, r.externalCount));
+    return map;
+  }, [brokerReports]);
+
   const filtered = diagnostics.filter(d => 
     !searchBroker || d.brokerName.toLowerCase().includes(searchBroker.toLowerCase())
   );
@@ -955,7 +966,7 @@ function DiagnosticView({
                     </div>
                     <div className="flex items-center gap-2">
                       <Badge variant="destructive" className="text-xs">
-                        {diag.finalExternalCount}/{diag.targetExternals} externos
+                        {realExternalMap.get(diag.brokerId) ?? diag.finalExternalCount}/{diag.targetExternals} externos
                       </Badge>
                       <Badge variant="secondary" className="text-xs">
                         {diag.totalOpportunities} vezes bloqueado
@@ -1015,12 +1026,20 @@ function DiagnosticView({
 // ═══════════════════════════════════════════════════════════
 // ELIGIBILITY VIEW — Vínculos Externos por Corretor
 // ═══════════════════════════════════════════════════════════
-function EligibilityView({ eligibilityMap, expanded, toggleExpanded, searchBroker }: {
+function EligibilityView({ eligibilityMap, expanded, toggleExpanded, searchBroker, brokerReports }: {
   eligibilityMap: BrokerExternalEligibility[];
   expanded: Set<string>;
   toggleExpanded: (id: string) => void;
   searchBroker: string;
+  brokerReports: BrokerValidationReport[];
 }) {
+  // Build real external count map from final assignments
+  const realExternalMap = useMemo(() => {
+    const map = new Map<string, number>();
+    brokerReports.forEach(r => map.set(r.brokerId, r.externalCount));
+    return map;
+  }, [brokerReports]);
+
   const filtered = eligibilityMap.filter(b =>
     !searchBroker || b.brokerName.toLowerCase().includes(searchBroker.toLowerCase())
   );
@@ -1032,7 +1051,8 @@ function EligibilityView({ eligibilityMap, expanded, toggleExpanded, searchBroke
   return (
     <div className="space-y-2">
       {filtered.map(broker => {
-        const isUnder = broker.finalExternalCount < broker.targetExternals;
+        const realExternal = realExternalMap.get(broker.brokerId) ?? broker.finalExternalCount;
+        const isUnder = realExternal < broker.targetExternals;
         const isExpanded = expanded.has(broker.brokerId);
 
         return (
@@ -1043,7 +1063,7 @@ function EligibilityView({ eligibilityMap, expanded, toggleExpanded, searchBroke
                 <User className="h-3.5 w-3.5 text-muted-foreground" />
                 <span className="font-medium text-sm">{broker.brokerName}</span>
                 <Badge variant={isUnder ? "destructive" : "secondary"} className="text-xs ml-auto">
-                  {broker.finalExternalCount}/{broker.targetExternals} externos
+                  {realExternal}/{broker.targetExternals} externos
                 </Badge>
                 <Badge variant="outline" className="text-xs">
                   {broker.linkedLocationCount} locais vinculados
