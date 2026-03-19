@@ -1026,12 +1026,20 @@ function DiagnosticView({
 // ═══════════════════════════════════════════════════════════
 // ELIGIBILITY VIEW — Vínculos Externos por Corretor
 // ═══════════════════════════════════════════════════════════
-function EligibilityView({ eligibilityMap, expanded, toggleExpanded, searchBroker }: {
+function EligibilityView({ eligibilityMap, expanded, toggleExpanded, searchBroker, brokerReports }: {
   eligibilityMap: BrokerExternalEligibility[];
   expanded: Set<string>;
   toggleExpanded: (id: string) => void;
   searchBroker: string;
+  brokerReports: BrokerValidationReport[];
 }) {
+  // Build real external count map from final assignments
+  const realExternalMap = useMemo(() => {
+    const map = new Map<string, number>();
+    brokerReports.forEach(r => map.set(r.brokerId, r.externalCount));
+    return map;
+  }, [brokerReports]);
+
   const filtered = eligibilityMap.filter(b =>
     !searchBroker || b.brokerName.toLowerCase().includes(searchBroker.toLowerCase())
   );
