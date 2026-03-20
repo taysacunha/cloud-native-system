@@ -151,6 +151,31 @@ export function GanttFeriasView({ ferias, startDate, endDate, onSelectFerias }: 
     return overlaps;
   }, [ferias]);
 
+  // Month headers
+  const monthHeaders = useMemo(() => {
+    const headers: Array<{ label: string; startIdx: number; span: number }> = [];
+    let currentMonth = "";
+    let currentStart = 0;
+    let currentSpan = 0;
+    days.forEach((day, idx) => {
+      const monthKey = format(day, "yyyy-MM");
+      if (monthKey !== currentMonth) {
+        if (currentSpan > 0) {
+          headers.push({ label: format(days[currentStart], "MMM yyyy", { locale: ptBR }), startIdx: currentStart, span: currentSpan });
+        }
+        currentMonth = monthKey;
+        currentStart = idx;
+        currentSpan = 1;
+      } else {
+        currentSpan++;
+      }
+    });
+    if (currentSpan > 0) {
+      headers.push({ label: format(days[currentStart], "MMM yyyy", { locale: ptBR }), startIdx: currentStart, span: currentSpan });
+    }
+    return headers;
+  }, [days]);
+
   if (rows.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
