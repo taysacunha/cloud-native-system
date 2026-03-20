@@ -177,9 +177,35 @@ export function CalendarioFeriasTab() {
       if (selectedUnidade !== "all") {
         return true;
       }
+      if (searchNome) {
+        const nome = f.colaborador?.nome?.toLowerCase() || "";
+        if (!nome.includes(searchNome.toLowerCase())) return false;
+      }
       return true;
     });
-  }, [ferias, selectedSetor, selectedUnidade]);
+  }, [ferias, selectedSetor, selectedUnidade, searchNome]);
+
+  // Gantt date range
+  const ganttRange = useMemo(() => {
+    const months = parseInt(ganttMonths) || 1;
+    if (months === 12) {
+      const year = calendarMonth.getFullYear();
+      return { start: new Date(year, 0, 1), end: new Date(year, 11, 31) };
+    }
+    const start = startOfMonth(calendarMonth);
+    const end = endOfMonth(addMonths(calendarMonth, months - 1));
+    return { start, end };
+  }, [calendarMonth, ganttMonths]);
+
+  // Férias that overlap the gantt range
+  const feriasGantt = useMemo(() => {
+    return feriasFiltradas.filter((f) => {
+      const intervals = getGozoIntervals(f);
+      return intervals.some((interval) =>
+        interval.start <= ganttRange.end && interval.end >= ganttRange.start
+      );
+    });
+  }, [feriasFiltradas, ganttRange]);
 
   // Get all gozo intervals for a given ferias
   const getGozoIntervals = (f: Ferias): Array<{ start: Date; end: Date }> => {
