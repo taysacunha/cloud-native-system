@@ -487,6 +487,8 @@ export function CalendarioFeriasTab() {
                 placeholder="Meses"
                 className="w-full sm:w-[180px]"
                 maxDisplay={2}
+                searchable
+                searchPlaceholder="Buscar mês..."
               />
               <Select value={String(ganttYear)} onValueChange={(v) => setGanttYear(Number(v))}>
                 <SelectTrigger className="w-full sm:w-[100px] h-9">
