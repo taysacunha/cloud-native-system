@@ -423,27 +423,23 @@ export function CalendarioFeriasTab() {
             Gantt
           </Button>
         </div>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Buscar por nome..."
-              value={searchNome}
-              onChange={e => setSearchNome(e.target.value)}
-              className="pl-8 h-9 w-full sm:w-[200px]"
-            />
-          </div>
-          <Select value={selectedSetor} onValueChange={setSelectedSetor}>
-            <SelectTrigger className="w-full sm:w-[160px] h-9">
-              <SelectValue placeholder="Setor" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos os setores</SelectItem>
-              {setores.map((s) => (
-                <SelectItem key={s.id} value={s.id}>{s.nome}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:flex-wrap">
+          <MultiSelect
+            options={colaboradorOptions}
+            selected={selectedColaboradores}
+            onChange={setSelectedColaboradores}
+            placeholder="Colaboradores"
+            className="w-full sm:w-[200px]"
+            maxDisplay={1}
+          />
+          <MultiSelect
+            options={setores.map((s) => ({ value: s.id, label: s.nome }))}
+            selected={selectedSetores}
+            onChange={setSelectedSetores}
+            placeholder="Setores"
+            className="w-full sm:w-[180px]"
+            maxDisplay={1}
+          />
           <Select value={selectedUnidade} onValueChange={setSelectedUnidade}>
             <SelectTrigger className="w-full sm:w-[160px] h-9">
               <SelectValue placeholder="Unidade" />
@@ -456,18 +452,51 @@ export function CalendarioFeriasTab() {
             </SelectContent>
           </Select>
           {viewMode === "gantt" && (
-            <Select value={ganttMonths} onValueChange={setGanttMonths}>
-              <SelectTrigger className="w-full sm:w-[120px] h-9">
-                <SelectValue placeholder="Período" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="1">1 mês</SelectItem>
-                <SelectItem value="2">2 meses</SelectItem>
-                <SelectItem value="3">3 meses</SelectItem>
-                <SelectItem value="6">6 meses</SelectItem>
-                <SelectItem value="12">Ano inteiro</SelectItem>
-              </SelectContent>
-            </Select>
+            <>
+              <MultiSelect
+                options={[
+                  { value: "0", label: "Janeiro" },
+                  { value: "1", label: "Fevereiro" },
+                  { value: "2", label: "Março" },
+                  { value: "3", label: "Abril" },
+                  { value: "4", label: "Maio" },
+                  { value: "5", label: "Junho" },
+                  { value: "6", label: "Julho" },
+                  { value: "7", label: "Agosto" },
+                  { value: "8", label: "Setembro" },
+                  { value: "9", label: "Outubro" },
+                  { value: "10", label: "Novembro" },
+                  { value: "11", label: "Dezembro" },
+                  { value: "year", label: "Ano inteiro" },
+                ]}
+                selected={ganttMonths}
+                onChange={(vals) => {
+                  // If "year" is toggled, select only it
+                  if (vals.includes("year") && !ganttMonths.includes("year")) {
+                    setGanttMonths(["year"]);
+                  } else if (ganttMonths.includes("year") && vals.length > 1) {
+                    setGanttMonths(vals.filter((v) => v !== "year"));
+                  } else {
+                    setGanttMonths(vals);
+                  }
+                }}
+                placeholder="Meses"
+                className="w-full sm:w-[180px]"
+                maxDisplay={2}
+              />
+              <Select value={String(ganttYear)} onValueChange={(v) => setGanttYear(Number(v))}>
+                <SelectTrigger className="w-full sm:w-[100px] h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {getYearOptions().map((y) => (
+                    <SelectItem key={y} value={String(y)}>{y}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </>
+          )}
+        </div>
           )}
         </div>
       </div>
