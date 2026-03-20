@@ -68,12 +68,14 @@ interface Unidade {
 export function CalendarioFeriasTab() {
   const [calendarMonth, setCalendarMonth] = useState<Date>(new Date());
   const [selectedUnidade, setSelectedUnidade] = useState<string>("all");
-  const [selectedSetor, setSelectedSetor] = useState<string>("all");
+  const [selectedSetores, setSelectedSetores] = useState<string[]>([]);
+  const [selectedColaboradores, setSelectedColaboradores] = useState<string[]>([]);
   const [selectedFerias, setSelectedFerias] = useState<Ferias | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [viewMode, setViewMode] = useState<"lista" | "gantt">("lista");
   const [searchNome, setSearchNome] = useState("");
-  const [ganttMonths, setGanttMonths] = useState("1");
+  const [ganttMonths, setGanttMonths] = useState<string[]>([]); // empty = current month only
+  const [ganttYear, setGanttYear] = useState(new Date().getFullYear());
 
   // Buscar férias
   const { data: ferias = [], isLoading: loadingFerias } = useQuery({
