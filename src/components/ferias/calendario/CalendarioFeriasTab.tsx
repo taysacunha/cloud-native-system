@@ -431,6 +431,8 @@ export function CalendarioFeriasTab() {
             placeholder="Colaboradores"
             className="w-full sm:w-[200px]"
             maxDisplay={1}
+            searchable
+            searchPlaceholder="Buscar colaborador..."
           />
           <MultiSelect
             options={setores.map((s) => ({ value: s.id, label: s.nome }))}
@@ -439,6 +441,8 @@ export function CalendarioFeriasTab() {
             placeholder="Setores"
             className="w-full sm:w-[180px]"
             maxDisplay={1}
+            searchable
+            searchPlaceholder="Buscar setor..."
           />
           <Select value={selectedUnidade} onValueChange={setSelectedUnidade}>
             <SelectTrigger className="w-full sm:w-[160px] h-9">
@@ -483,6 +487,8 @@ export function CalendarioFeriasTab() {
                 placeholder="Meses"
                 className="w-full sm:w-[180px]"
                 maxDisplay={2}
+                searchable
+                searchPlaceholder="Buscar mês..."
               />
               <Select value={String(ganttYear)} onValueChange={(v) => setGanttYear(Number(v))}>
                 <SelectTrigger className="w-full sm:w-[100px] h-9">
