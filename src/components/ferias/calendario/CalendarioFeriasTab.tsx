@@ -579,6 +579,17 @@ export function CalendarioFeriasTab() {
           </CardContent>
         </Card>
       </div>
+      ) : (
+        <GanttFeriasView
+          ferias={feriasGantt}
+          startDate={ganttRange.start}
+          endDate={ganttRange.end}
+          onSelectFerias={(f) => {
+            setSelectedFerias(f);
+            setDetailsOpen(true);
+          }}
+        />
+      )}
 
       {/* Dialog de detalhes */}
       <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
