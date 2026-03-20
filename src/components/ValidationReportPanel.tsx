@@ -1050,6 +1050,15 @@ function EligibilityView({ eligibilityMap, expanded, toggleExpanded, searchBroke
 
   return (
     <div className="space-y-2">
+      <div className="p-3 rounded-lg bg-accent/50 border border-accent text-sm">
+        <div className="font-medium flex items-center gap-2">
+          <Link2 className="h-4 w-4" />
+          Vínculos Externos: {filtered.length} corretor{filtered.length !== 1 ? "es" : ""}
+        </div>
+        <p className="text-xs text-muted-foreground mt-1">
+          Mostra em quais locais externos cada corretor está vinculado, quais turnos estão disponíveis e quais estão bloqueados por regras de disponibilidade.
+        </p>
+      </div>
       {filtered.map(broker => {
         const realExternal = realExternalMap.get(broker.brokerId) ?? broker.finalExternalCount;
         const isUnder = realExternal < broker.targetExternals;
@@ -1063,17 +1072,17 @@ function EligibilityView({ eligibilityMap, expanded, toggleExpanded, searchBroke
                 <User className="h-3.5 w-3.5 text-muted-foreground" />
                 <span className="font-medium text-sm">{broker.brokerName}</span>
                 <Badge variant={isUnder ? "destructive" : "secondary"} className="text-xs ml-auto">
-                  {realExternal}/{broker.targetExternals} externos
+                  {realExternal} plantões externos (meta: {broker.targetExternals})
                 </Badge>
                 <Badge variant="outline" className="text-xs">
-                  {broker.linkedLocationCount} locais vinculados
+                  Vinculado a {broker.linkedLocationCount} {broker.linkedLocationCount === 1 ? "local" : "locais"}
                 </Badge>
                 <Badge variant="outline" className="text-xs">
-                  {broker.totalEligibleDemands} elegíveis
+                  Disponível em {broker.totalEligibleDemands} turnos
                 </Badge>
                 {broker.totalExcludedDemands > 0 && (
                   <Badge variant="outline" className="text-xs text-amber-600">
-                    {broker.totalExcludedDemands} excluídos
+                    Bloqueado em {broker.totalExcludedDemands} turnos
                   </Badge>
                 )}
               </div>
@@ -1086,30 +1095,36 @@ function EligibilityView({ eligibilityMap, expanded, toggleExpanded, searchBroke
                       <MapPin className="h-3 w-3 text-muted-foreground" />
                       <span className="text-sm font-medium">{loc.locationName}</span>
                       <Badge variant="outline" className="text-[10px]">
-                        {loc.eligible.length} elegíveis
+                        {loc.eligible.length} turnos disponíveis
                       </Badge>
                       {loc.excluded.length > 0 && (
                         <Badge variant="outline" className="text-[10px] text-amber-600">
-                          {loc.excluded.length} excluídos
+                          {loc.excluded.length} turnos bloqueados
                         </Badge>
                       )}
                     </div>
                     {loc.eligible.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mt-1">
-                        {loc.eligible.map((e, i) => (
-                          <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
-                            {formatDateBR(e.dateStr)} {e.shift === "morning" ? "Manhã" : "Tarde"}
-                          </span>
-                        ))}
+                      <div className="mt-1">
+                        <div className="text-[10px] font-medium text-emerald-700 dark:text-emerald-400 mb-0.5">Turnos disponíveis:</div>
+                        <div className="flex flex-wrap gap-1">
+                          {loc.eligible.map((e, i) => (
+                            <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
+                              {formatDateBR(e.dateStr)} {e.shift === "morning" ? "Manhã" : "Tarde"}
+                            </span>
+                          ))}
+                        </div>
                       </div>
                     )}
                     {loc.excluded.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mt-1">
-                        {loc.excluded.map((e, i) => (
-                          <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800" title={humanizeExclusionReason(e.reason)}>
-                            {formatDateBR(e.dateStr)} {e.shift === "morning" ? "Manhã" : "Tarde"} — {humanizeExclusionReason(e.reason)}
-                          </span>
-                        ))}
+                      <div className="mt-1">
+                        <div className="text-[10px] font-medium text-amber-700 dark:text-amber-400 mb-0.5">Turnos bloqueados:</div>
+                        <div className="flex flex-wrap gap-1">
+                          {loc.excluded.map((e, i) => (
+                            <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800" title={humanizeExclusionReason(e.reason)}>
+                              {formatDateBR(e.dateStr)} {e.shift === "morning" ? "Manhã" : "Tarde"} — {humanizeExclusionReason(e.reason)}
+                            </span>
+                          ))}
+                        </div>
                       </div>
                     )}
                   </div>
