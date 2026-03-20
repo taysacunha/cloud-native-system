@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Calendar } from "@/components/ui/calendar";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Calendar as CalendarIcon, AlertCircle, Users, Palmtree, BarChart3, List, Search } from "lucide-react";
 import { format, parseISO, isWithinInterval, startOfMonth, endOfMonth, eachDayOfInterval, addMonths } from "date-fns";
