@@ -1072,7 +1072,7 @@ function EligibilityView({ eligibilityMap, expanded, toggleExpanded, searchBroke
                 <User className="h-3.5 w-3.5 text-muted-foreground" />
                 <span className="font-medium text-sm">{broker.brokerName}</span>
                 <Badge variant={isUnder ? "destructive" : "secondary"} className="text-xs ml-auto">
-                  {realExternal} plantões externos (meta: {broker.targetExternals})
+                  {realExternal} externos no mês (meta: {broker.targetExternals}/semana)
                 </Badge>
                 <Badge variant="outline" className="text-xs">
                   Vinculado a {broker.linkedLocationCount} {broker.linkedLocationCount === 1 ? "local" : "locais"}
