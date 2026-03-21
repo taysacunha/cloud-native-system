@@ -558,7 +558,7 @@ export function ScheduleCalendarView({ assignments, scheduleWeekStart, scheduleW
             value={observationText}
             onChange={(e) => handleObservationChange(e.target.value)}
             placeholder="Adicione observações sobre esta escala..."
-            className="min-h-[80px] resize-y"
+            className="min-h-[80px] resize-y text-base"
           />
           <div className="flex items-center gap-3 mt-2">
             <Button
